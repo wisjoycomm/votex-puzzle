@@ -1,0 +1,10 @@
+{
+  "name": "votex-puzzle",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}
