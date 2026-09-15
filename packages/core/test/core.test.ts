@@ -210,6 +210,30 @@ test("teddy_burgundy.json parses into lanes matching the raw shooter data", () =
     });
 });
 
+test("shortened [x,y,z,color] cubes parse identically to the editor's objects", () => {
+    // Mirrors what scripts/shrink-level.mjs writes into public/levels.
+    const shortened: BoxyBlastLevel = {
+        ...teddyBurgundy,
+        Cubes: teddyBurgundy.Cubes.map((c) => {
+            assert.ok(!Array.isArray(c), "fixture should be in the editor's object form");
+            return [c.GridPosition.x, c.GridPosition.y, c.GridPosition.z, c.Color] as [
+                number,
+                number,
+                number,
+                number,
+            ];
+        }),
+    };
+
+    // Whole-LevelDef compare: grid size, all 10,925 cells in order, lanes, initial rotation. A
+    // shortening that dropped or transposed a coordinate would otherwise ship a level that loads
+    // fine and is quietly wrong.
+    assert.deepEqual(
+        parseBoxyBlastLevel(shortened),
+        parseBoxyBlastLevel(teddyBurgundy),
+    );
+});
+
 test("GameCore boots teddy_burgundy.json and fires from column 0 without throwing", () => {
     const level = parseBoxyBlastLevel(teddyBurgundy);
     const core = new GameCore(level, 1);

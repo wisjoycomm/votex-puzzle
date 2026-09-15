@@ -7,6 +7,9 @@ export interface LevelDef {
     cells: (number | null)[];
     lanes: HiveDef[][];
     maxBends?: number;
+    /** Euler angles the sculpture should start at, straight from the level's DefaultRotation.
+     *  Presentation only — the simulation doesn't care which way round the sculpture is. */
+    initialRotation?: V3;
 }
 
 export interface Frame {
