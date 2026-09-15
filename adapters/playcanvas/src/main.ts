@@ -4,15 +4,22 @@ import {
     AppBase,
     AppOptions,
     BatchManager,
+    ButtonComponentSystem,
     CameraComponentSystem,
     Color,
     ContainerHandler,
+    ElementComponentSystem,
+    ElementInput,
     Entity,
     FILLMODE_FILL_WINDOW,
+    FontHandler,
     LightComponentSystem,
+    Mouse,
     RESOLUTION_AUTO,
     RenderComponentSystem,
+    ScreenComponentSystem,
     TextureHandler,
+    TouchDevice,
     createGraphicsDevice
 } from 'playcanvas';
 
@@ -23,15 +30,24 @@ import { buildSculpture, cellKey, destroyCube } from './sculpture.ts';
 import './style.css';
 
 const canvas = document.getElementById('application-canvas') as HTMLCanvasElement;
-const hudEl = document.getElementById('hud') as HTMLElement;
 
 const device = await createGraphicsDevice(canvas);
 device.maxPixelRatio = Math.min(window.devicePixelRatio, 2);
 
 const createOptions = new AppOptions();
 createOptions.graphicsDevice = device;
-createOptions.componentSystems = [RenderComponentSystem, CameraComponentSystem, LightComponentSystem];
-createOptions.resourceHandlers = [TextureHandler, ContainerHandler];
+createOptions.mouse = new Mouse(canvas);
+createOptions.touch = new TouchDevice(canvas);
+createOptions.elementInput = new ElementInput(canvas);
+createOptions.componentSystems = [
+    RenderComponentSystem,
+    CameraComponentSystem,
+    LightComponentSystem,
+    ScreenComponentSystem,
+    ButtonComponentSystem,
+    ElementComponentSystem
+];
+createOptions.resourceHandlers = [TextureHandler, ContainerHandler, FontHandler];
 createOptions.batchManager = BatchManager;
 
 const app = new AppBase(canvas);
@@ -60,46 +76,24 @@ const level = parseBoxyBlastLevel(rawLevel);
 const sculpture = await buildSculpture(app, level);
 
 // Pulled back further so the sculpture reads smaller in frame (~3/5 its previous apparent size).
-const distance = sculpture.radius * 3.7;
+const distance = sculpture.radius * 5;
 camera.setPosition(distance * 0.6, distance * 0.5, distance * 0.6);
 // Look below the sculpture's actual center so it sits higher in frame, leaving room for the HUD
 // queue stack at the bottom instead of the model reading vertically centered on screen.
 camera.lookAt(0, -sculpture.radius * 0.5, 0);
 
-const rig = createCameraRig(canvas, sculpture.root, camera);
-const bees = createBeeSwarm(app, camera, sculpture.mesh, distance);
-
 const core = new GameCore(level, Date.now());
+const hud = await createHud(app, (lane) => core.activateColumn(lane));
 
-// GameState.slots is a pool of 5 firing slots, not indexed by lane — activateColumn hands the
-// hive to whichever slot is free. Diff before/after to learn which slot a lane's tap landed in,
-// so the HUD can show the right lane's "currently firing" hive.
-const laneToSlot = new Map<number, number>();
-
-const hud = createHud(hudEl, (lane) => {
-    const before = core.getState().slots;
-    core.activateColumn(lane);
-    const after = core.getState().slots;
-    const slot = after.findIndex((s, i) => s && !before[i]);
-    if (slot !== -1) laneToSlot.set(lane, slot);
-});
+const rig = createCameraRig(canvas, sculpture.root, camera, hud.hitsButton);
+const bees = createBeeSwarm(app, camera, sculpture.mesh, distance);
 
 core.on('cubeShot', (e) => {
     const cubePos = sculpture.cubes.get(cellKey(e.cell))?.getPosition().clone();
     destroyCube(app, sculpture, e.cell);
     if (!cubePos) return;
 
-    let lane: number | undefined;
-    for (const [l, slot] of laneToSlot) {
-        if (slot === e.slot) lane = l;
-    }
-    const originScreen = lane !== undefined ? hud.getFixSlotScreenPos(lane) : undefined;
-    bees.spawn(cubePos, e.color, originScreen);
-});
-core.on('laneDepleted', (e) => {
-    for (const [lane, slot] of laneToSlot) {
-        if (slot === e.slot) laneToSlot.delete(lane);
-    }
+    bees.spawn(cubePos, e.color, hud.getSlotScreenPos(e.slot));
 });
 core.on('gameWon', () => hud.setStatus('Cleared!'));
 core.on('gameLost', () => hud.setStatus('No moves left'));
@@ -109,7 +103,7 @@ app.on('update', (dt: number) => {
     bees.update(dt);
     core.setViewDirection(rig.getViewDir());
     const frame = core.update(dt);
-    hud.refresh(frame.state, (lane) => laneToSlot.get(lane));
+    hud.refresh(frame.state);
 });
 
 app.on('destroy', () => rig.destroy());

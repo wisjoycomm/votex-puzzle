@@ -134,28 +134,32 @@ export class GameCore {
     /**
      * Click a hive in a waiting column. Normally only itemIndex 0 (the
      * column's front) is allowed; opts.booster bypasses that to pull any
-     * item, closing the gap behind it. No-ops if no slot is free.
+     * item, closing the gap behind it. Slots are a shared pool: a column may
+     * hold several at once, and takes the lowest-numbered free one.
+     * Returns the slot it landed in, or null if nothing activated, so a caller
+     * (HUD fly animation, etc.) doesn't have to re-derive that from state.
      */
     activateColumn(
         columnIndex: number,
         itemIndex = 0,
         opts?: { booster?: boolean },
-    ): void {
-        if (this.status !== "playing") return;
-        if (itemIndex !== 0 && !opts?.booster) return;
+    ): number | null {
+        if (this.status !== "playing") return null;
+        if (itemIndex !== 0 && !opts?.booster) return null;
 
         const column = this.columns[columnIndex];
-        if (!column) return;
+        if (!column) return null;
 
         const freeSlot = this.slots.findIndex((s) => s === null);
-        if (freeSlot === -1) return;
+        if (freeSlot === -1) return null;
 
         const hive =
             itemIndex === 0 ? column.popFront() : column.popAt(itemIndex);
-        if (!hive) return;
+        if (!hive) return null;
 
         const shooter = new Shooter();
         this.slots[freeSlot] = shooter;
         shooter.activate(hive, this.time, freeSlot, this.pending);
+        return freeSlot;
     }
 }

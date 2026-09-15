@@ -12,10 +12,15 @@ export type CameraRig = {
     update(dt: number): void;
     getViewDir(): V3;
     destroy(): void;
-}
+};
 
 // ponytail: raw pointer events, switch to app.mouse/app.touch if multi-touch is ever needed.
-export function createCameraRig(canvas: HTMLCanvasElement, root: Entity, camera: Entity): CameraRig {
+export function createCameraRig(
+    canvas: HTMLCanvasElement,
+    root: Entity,
+    camera: Entity,
+    hitsUi: (x: number, y: number) => boolean
+): CameraRig {
     // target* is set from input; yaw/pitch ease toward it each frame (see update()).
     let targetYaw = 0;
     let targetPitch = 0;
@@ -26,6 +31,9 @@ export function createCameraRig(canvas: HTMLCanvasElement, root: Entity, camera:
     let lastY = 0;
 
     const onPointerDown = (e: PointerEvent) => {
+        // HUD buttons render on this same canvas now (no DOM overlay to intercept the click
+        // first), so a tap on one would otherwise also start a drag.
+        if (hitsUi(e.clientX, e.clientY)) return;
         dragging = true;
         lastX = e.clientX;
         lastY = e.clientY;

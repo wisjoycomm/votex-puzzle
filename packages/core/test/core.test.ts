@@ -41,8 +41,8 @@ test("activateColumn front click fills an empty slot and empties the column", ()
     let activations = 0;
     core.on("hiveActivated", () => activations++);
 
-    core.activateColumn(0);
-    core.activateColumn(0); // column is now empty, no-op
+    assert.equal(core.activateColumn(0), 0);
+    assert.equal(core.activateColumn(0), null); // column is now empty, no-op
     core.update(0);
 
     assert.equal(activations, 1);
@@ -56,7 +56,7 @@ test("non-front click without booster is a no-op", () => {
         1,
     );
 
-    core.activateColumn(0, 1); // index 1, no booster
+    assert.equal(core.activateColumn(0, 1), null); // index 1, no booster
     const state = core.getState();
 
     assert.equal(state.slots.every((s) => s === null), true);
@@ -94,8 +94,8 @@ test("activateColumn is a no-op when all slots are full", () => {
         1,
     );
 
-    for (let i = 0; i < 5; i++) core.activateColumn(i);
-    core.activateColumn(5); // 6th column, no free slot left
+    for (let i = 0; i < 5; i++) assert.equal(core.activateColumn(i), i);
+    assert.equal(core.activateColumn(5), null); // 6th column, no free slot left
 
     const state = core.getState();
     assert.equal(state.slots.every((s) => s !== null), true);
@@ -134,6 +134,49 @@ test("slot frees up and becomes activatable again once its hive is exhausted", (
     core.activateColumn(1);
     assert.equal(core.getState().slots[0]?.color, 1);
     assert.equal(core.getState().columns[1].length, 0);
+});
+
+test("one column can hold several slots at once, taking the lowest free one each time", () => {
+    const core = new GameCore(
+        smallSolidCube([
+            [
+                { color: 1, ammo: 1 },
+                { color: 2, ammo: 1 },
+                { color: 3, ammo: 1 },
+            ],
+        ]),
+        1,
+    );
+
+    assert.equal(core.activateColumn(0), 0);
+    assert.equal(core.activateColumn(0), 1); // free slots exist, so it doesn't wait on slot 0
+    assert.equal(core.activateColumn(0), 2);
+
+    const state = core.getState();
+    assert.equal(state.slots.filter((s) => s !== null).length, 3);
+    assert.deepEqual(
+        state.slots.map((s) => s?.color ?? null),
+        [1, 2, 3, null, null],
+    );
+    assert.equal(state.columns[0].length, 0);
+});
+
+test("a freed slot is reused before higher ones", () => {
+    const core = new GameCore(
+        smallSolidCube([
+            [{ color: 1, ammo: 1 }, { color: 2, ammo: 1 }],
+            [{ color: 3, ammo: 9 }],
+        ]),
+        1,
+    );
+
+    assert.equal(core.activateColumn(0), 0);
+    assert.equal(core.activateColumn(1), 1);
+
+    for (let i = 0; i < 5; i++) core.update(0.35); // exhausts the 1-ammo hive in slot 0
+    assert.equal(core.getState().slots[0], null);
+
+    assert.equal(core.activateColumn(0), 0); // slot 0 is free again and slot 1 is still busy
 });
 
 test("teddy_burgundy.json parses into lanes matching the raw shooter data", () => {
