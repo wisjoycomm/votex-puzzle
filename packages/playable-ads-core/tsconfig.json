@@ -1,0 +1,17 @@
+{
+    "compilerOptions": {
+        "rootDir": "./src",
+        "outDir": "./dist",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "allowImportingTsExtensions": true,
+        "rewriteRelativeImportExtensions": true,
+        "target": "ES2020",
+        "declaration": true,
+        "strict": true,
+        "skipLibCheck": true,
+        "lib": ["ES2020", "DOM"],
+        "types": ["node"]
+    },
+    "exclude": ["test", "dist"]
+}
