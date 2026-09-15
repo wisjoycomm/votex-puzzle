@@ -1,6 +1,6 @@
 import { Easing, Group, Tween } from '@tweenjs/tween.js';
 import { Asset, Color, Entity, Mat4, MeshInstance, Quat, Vec3, math } from 'playcanvas';
-import type { AppBase, GraphNode, Mesh } from 'playcanvas';
+import type { AppBase, GraphNode, Mesh, RenderComponent } from 'playcanvas';
 
 import BEE_MODEL_URL from './assets/models/Bee_2.glb?inline';
 import { materialFor } from './colors.ts';
@@ -98,6 +98,8 @@ type BeeInstance = {
     wingR: GraphNode | null;
     cube: Entity;
     cubeMeshInstance: MeshInstance;
+    /** The bee's body mesh instances, recoloured per flight to match the hive that fired it. */
+    bodyMeshInstances: MeshInstance[];
     flapT: number;
     inUse: boolean;
     /** Route this bee was given, in sculpture-local space — drawn when DEBUG_PATHS is on. */
@@ -208,12 +210,22 @@ export function createBeeSwarm(
         cube.enabled = false;
         sculptureRoot.addChild(cube);
 
+        // inspect-glb: Bee_2.glb carries four materials — Body_Color, Body_Black, Smile_Texture and
+        // lambert1. Only the first is the tintable shell; swapping the lot would flatten the
+        // stripes, face and wings into one colour. Collected before any swap, since a recoloured
+        // instance no longer answers to the original name.
+        const bodyMeshInstances = root
+            .findComponents('render')
+            .flatMap((component) => (component as RenderComponent).meshInstances)
+            .filter((meshInstance) => meshInstance.material.name === 'Body_Color');
+
         return {
             root,
             wingL: root.findByName('Wing_L'),
             wingR: root.findByName('Wing_R'),
             cube,
             cubeMeshInstance,
+            bodyMeshInstances,
             flapT: 0,
             inUse: false,
             debugPoints: null
@@ -501,7 +513,11 @@ export function createBeeSwarm(
 
         // Visible at the shot cell right away, standing in for the sculpture cube destroyCube
         // just removed — it sits still until the bee arrives, so nothing pops in/out of view.
-        inst.cubeMeshInstance.material = materialFor(color);
+        // Bee and cargo share the hive's colour, so a shot reads as belonging to the hive it came
+        // from even after the cube is out of frame.
+        const material = materialFor(color);
+        inst.cubeMeshInstance.material = material;
+        for (const meshInstance of inst.bodyMeshInstances) meshInstance.material = material;
         inst.cube.setLocalPosition(localCubePos);
         inst.cube.enabled = true;
 
