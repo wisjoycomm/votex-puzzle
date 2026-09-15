@@ -1,4 +1,4 @@
-import { Asset, ELEMENTTYPE_IMAGE, Entity, Layer, SCALEMODE_NONE } from 'playcanvas';
+import { Asset, ELEMENTTYPE_IMAGE, Entity, Layer, SCALEMODE_NONE, Vec4 } from 'playcanvas';
 import type { AppBase, CameraComponent } from 'playcanvas';
 
 // `?inline` = base64 data URI, so the playable stays one file. WebP via `npm run to-webp`.
@@ -29,11 +29,19 @@ const ENTRANCE_Y_FRACTION = 1;
 /** CSS px below the hive where a bee lines up, so the last stretch is straight up. */
 const APPROACH_DROP = 50;
 
+// Dark BG 01.png is 50x50 flat bands, not a gradient: rows 0-2 #676C91, 3-5 #212335, 6-49 #31344C.
+// Sample one row from the middle of a band, never its edge — a rect ending on a boundary blends
+// into the next band along the seam. v runs from the bottom.
+const SKY_RECT = new Vec4(0, 48 / 50, 1, 1 / 50); // row 1
+const GROUND_RECT = new Vec4(0, 22 / 50, 1, 1 / 50); // row 27
+
 export type Backdrop = {
     /** CSS px point below the hive where a bee lines up. */
     approachScreenPos(): { x: number; y: number };
     /** CSS px point inside the hive, where bees disappear. */
     entranceScreenPos(): { x: number; y: number };
+    /** Where the two bands meet, in screen units from the bottom. Tracks the HUD, so not constant. */
+    setGroundHeight(height: number): void;
 };
 
 export async function createBackdrop(app: AppBase, camera: Entity): Promise<Backdrop> {
@@ -83,16 +91,36 @@ export async function createBackdrop(app: AppBase, camera: Entity): Promise<Back
         return el;
     }
 
-    // The only thing that stretches: a 50x50 gradient anchored to all four corners.
-    const backgroundEl = new Entity('background');
-    backgroundEl.addComponent('element', {
+    // Sky covers the whole screen; ground draws over its lower part, so only ground needs a height.
+    const skyEl = new Entity('background-sky');
+    skyEl.addComponent('element', {
         type: ELEMENTTYPE_IMAGE,
         anchor: [0, 0, 1, 1],
         pivot: [0.5, 0.5],
         textureAsset: background.id,
+        rect: SKY_RECT,
         layers: [backdropLayer.id]
     });
-    behind.addChild(backgroundEl);
+    behind.addChild(skyEl);
+
+    // Anchor drives width; height comes from the HUD each frame. Zero until it lays out.
+    const groundEl = new Entity('background-ground');
+    groundEl.addComponent('element', {
+        type: ELEMENTTYPE_IMAGE,
+        anchor: [0, 0, 1, 0],
+        pivot: [0.5, 0],
+        height: 0,
+        textureAsset: background.id,
+        rect: GROUND_RECT,
+        layers: [backdropLayer.id]
+    });
+    behind.addChild(groundEl);
+
+    function setGroundHeight(height: number): void {
+        // Called every frame; the setter rebuilds the mesh, so only on a change.
+        if (groundEl.element!.height === height) return;
+        groundEl.element!.height = height;
+    }
 
     // Sibling order is draw order within a layer: canopy, then the hive's back shell over it.
     addTopCentre(behind, 'canopy', canopy, CANOPY_WIDTH, CANOPY_HEIGHT, 0, backdropLayer);
@@ -128,5 +156,5 @@ export async function createBackdrop(app: AppBase, camera: Entity): Promise<Back
         return { x: entrance.x, y: entrance.y + APPROACH_DROP };
     }
 
-    return { approachScreenPos, entranceScreenPos };
+    return { approachScreenPos, entranceScreenPos, setGroundHeight };
 }

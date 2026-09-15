@@ -28,6 +28,9 @@ export type Hud = {
     hitsButton(x: number, y: number): boolean;
     /** Simulation speed multiplier the player has selected. */
     getSpeed(): number;
+    /** Backdrop band split, in screen units from the bottom: the gap between the slot row and the
+     *  lane stack below it. Follows fitBoard()'s shrink. */
+    getBandSplit(): number;
     destroy(): void;
 };
 
@@ -215,6 +218,10 @@ export async function createHud(app: AppBase, onActivate: (lane: number) => numb
     // against the live viewport by fitBoard().
     let boardWidth = 0;
     let boardHeight = 0;
+    /** Band split, board-local; set by ensureLayout(). */
+    let splitLocalY = 0;
+    /** The same line in screen units, after fitBoard(). */
+    let bandSplit = 0;
 
     /**
      * SCALEMODE_NONE means the px constants above are literal device pixels and nothing scales with
@@ -244,6 +251,7 @@ export async function createHud(app: AppBase, onActivate: (lane: number) => numb
         // Scaling happens about the centred pivot, so half the shrink would otherwise lift the
         // board off the bottom edge. Re-place it so the margin holds at any scale.
         board.setLocalPosition(0, BOARD_BOTTOM_MARGIN + (boardHeight * fit) / 2, 0);
+        bandSplit = BOARD_BOTTOM_MARGIN + splitLocalY * fit;
     }
 
     function ensureLayout(laneCount: number, slotCount: number): void {
@@ -259,6 +267,10 @@ export async function createHud(app: AppBase, onActivate: (lane: number) => numb
             top += (q === 0 ? QUEUE_SIZE : QUEUE_PREVIEW_SIZE) - QUEUE_OVERLAP;
         }
         const slotY = top + ACTIVE_SIZE / 2 - QUEUE_PREVIEW_SIZE / 2 + SLOT_ROW_GAP;
+
+        // Halfway between the slot row and the queue stack, measured from the board's bottom edge —
+        // the edge fitBoard() pins.
+        splitLocalY = (slotY - ACTIVE_SIZE / 2 + queueY[0]! + QUEUE_SIZE / 2) / 2;
 
         // Derived, not declared: the board is exactly as tall as what it holds, so BOARD_BOTTOM_
         // MARGIN means what it says and nothing has to be re-tuned when a row size changes.
@@ -384,6 +396,7 @@ export async function createHud(app: AppBase, onActivate: (lane: number) => numb
         getSlotScreenPos,
         hitsButton,
         getSpeed: () => SPEEDS[speedIndex]!,
+        getBandSplit: () => bandSplit,
         destroy
     };
 }

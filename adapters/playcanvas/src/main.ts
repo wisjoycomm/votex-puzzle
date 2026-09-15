@@ -168,6 +168,8 @@ app.on('update', (dt: number) => {
     core.setViewDirection(rig.getViewDir());
     const frame = core.update(scaled);
     hud.refresh(frame.state);
+    // After refresh: fitBoard() runs in there.
+    backdrop.setGroundHeight(hud.getBandSplit());
 });
 
 app.on('destroy', () => rig.destroy());
