@@ -66,6 +66,10 @@ app.setCanvasFillMode(FILLMODE_FILL_WINDOW);
 app.setCanvasResolution(RESOLUTION_AUTO);
 
 // No resize listener: an ad slot can resize without firing one. Polled in the update loop instead.
+//
+// Poll the VIEWPORT, not the canvas: FILLMODE_FILL_WINDOW sizes the canvas from window.inner* and
+// writes the result back as inline styles, so canvas.client* is this poll's own output and never
+// changes again — an orientation flip would leave the frame stuck at the old shape forever.
 
 const camera = new Entity('camera');
 camera.addComponent('camera', { clearColor: new Color(0.08, 0.08, 0.12) });
@@ -83,21 +87,37 @@ const level = parseBoxyBlastLevel(rawLevel as unknown as BoxyBlastLevel);
 
 const sculpture = await buildSculpture(app, level);
 
-// Pulled back further so the sculpture reads smaller in frame (~3/5 its previous apparent size).
-const distance = sculpture.radius * 5;
+// Framing knobs — tune these on device, they're the ones that decide how big teddy reads.
+// Camera distance in bounding-sphere radii, and the master zoom: apparent size goes as 1/distance,
+// so smaller means bigger. Was 5; 3.33 is that same framing 1.5x closer.
+const DISTANCE_RADII = 3.33;
+const distance = sculpture.radius * DISTANCE_RADII;
+// Share of the portrait width back-off to actually apply. `radius` is a bounding SPHERE, wider
+// than teddy is, so fitting it strictly across a narrow slot wastes the height that slot has.
+// 1 = strict fit (old behaviour), 0 = ignore width entirely.
+const PORTRAIT_BACKOFF = 0.45;
+// Floor on the share of the height left for the model once the HUD has taken its cut, so a very
+// short slot can't push the camera towards infinity.
+const MIN_FREE_HEIGHT = 0.45;
+// Aim height as a share of radius. The camera looks horizontally, so RAISING this pushes the
+// sculpture DOWN the frame. Was -0.28, which sat it high; 0 drops it into the room the board freed.
+const FRAMING_Y = 0;
 // Level, straight-on camera: the tilt comes from the level's own DefaultRotation, applied to the
 // sculpture by the camera rig. An angled camera here would double-count it — with both, teddy ends
 // up on his back showing the camera the top of his head.
-// Aim height. The camera looks horizontally, so raising this pushes the sculpture DOWN the frame:
-// it drops into the gap between the hive hanging from the canopy and the HUD board at the bottom.
-const framingY = -sculpture.radius * 0.28;
+const framingY = sculpture.radius * FRAMING_Y;
 
-// fov is vertical, so a portrait slot clips the sculpture sideways. Back off by 1/aspect.
+/** Share of the viewport height the HUD board covers. Zero until the HUD has laid out. */
+let boardFraction = 0;
+
 function frameCamera(): void {
     const aspect = canvas.clientWidth / Math.max(canvas.clientHeight, 1);
-    camera.setPosition(0, framingY, aspect < 1 ? distance / aspect : distance);
-    // Aimed below the sculpture's actual center so it sits higher in frame, leaving room for the
-    // HUD queue stack at the bottom instead of the model reading vertically centered on screen.
+    // fov is vertical, so only a slot narrower than it is tall needs distance to fit the width.
+    const forWidth = aspect < 1 ? distance / aspect : distance;
+    // The board is a fixed pixel height, so the shorter the slot the more of the frame it claims —
+    // which is what makes a portrait slot able to show a bigger model than a landscape one.
+    const free = Math.max(MIN_FREE_HEIGHT, 1 - boardFraction);
+    camera.setPosition(0, framingY, (distance + (forWidth - distance) * PORTRAIT_BACKOFF) / free);
     camera.lookAt(0, framingY, 0);
 }
 frameCamera();
@@ -150,11 +170,10 @@ let lastHeight = 0;
 
 app.on('update', (dt: number) => {
     // Poll for a resized ad slot; the camera reframes because distance depends on aspect.
-    if (canvas.clientWidth !== lastWidth || canvas.clientHeight !== lastHeight) {
-        lastWidth = canvas.clientWidth;
-        lastHeight = canvas.clientHeight;
+    if (window.innerWidth !== lastWidth || window.innerHeight !== lastHeight) {
+        lastWidth = window.innerWidth;
+        lastHeight = window.innerHeight;
         app.resizeCanvas();
-        frameCamera();
     }
 
     // Off-screen or backgrounded: keep drawing, stop the clock.
@@ -168,8 +187,11 @@ app.on('update', (dt: number) => {
     core.setViewDirection(rig.getViewDir());
     const frame = core.update(scaled);
     hud.refresh(frame.state);
-    // After refresh: fitBoard() runs in there.
+    // After refresh: fitBoard() runs in there. Reframing every frame rather than off the resize
+    // poll — the camera depends on the board, so it can't be a frame behind it.
     backdrop.setGroundHeight(hud.getBandSplit());
+    boardFraction = hud.getBoardFraction();
+    frameCamera();
 });
 
 app.on('destroy', () => rig.destroy());

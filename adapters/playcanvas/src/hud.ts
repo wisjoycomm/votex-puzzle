@@ -31,6 +31,8 @@ export type Hud = {
     /** Backdrop band split, in screen units from the bottom: the gap between the slot row and the
      *  lane stack below it. Follows fitBoard()'s shrink. */
     getBandSplit(): number;
+    /** Share of the viewport height the board covers, for the camera to frame around. */
+    getBoardFraction(): number;
     destroy(): void;
 };
 
@@ -50,6 +52,9 @@ const QUEUE_OVERLAP = -16;
 const SLOT_SPACING = ACTIVE_SIZE + 32;
 const LANE_SPACING = QUEUE_SIZE + 16;
 const BOARD_BOTTOM_MARGIN = 2;
+// How far the board hangs off the bottom edge, so the queue stack reads as continuing past it
+// instead of stopping. Half a socket leaves 2.5 of the 3 previews visible.
+const BOARD_BOTTOM_CUT = QUEUE_SIZE / 2;
 // Gap between the top of the queue stack and the firing-slot row.
 const SLOT_ROW_GAP = 10;
 // Clearance kept either side of the board when it has to shrink to fit a narrow viewport.
@@ -222,6 +227,8 @@ export async function createHud(app: AppBase, onActivate: (lane: number) => numb
     let splitLocalY = 0;
     /** The same line in screen units, after fitBoard(). */
     let bandSplit = 0;
+    /** Board height as a share of the viewport, for the camera. */
+    let boardFraction = 0;
 
     /**
      * SCALEMODE_NONE means the px constants above are literal device pixels and nothing scales with
@@ -250,8 +257,10 @@ export async function createHud(app: AppBase, onActivate: (lane: number) => numb
         board.setLocalScale(fit, fit, fit);
         // Scaling happens about the centred pivot, so half the shrink would otherwise lift the
         // board off the bottom edge. Re-place it so the margin holds at any scale.
-        board.setLocalPosition(0, BOARD_BOTTOM_MARGIN + (boardHeight * fit) / 2, 0);
-        bandSplit = BOARD_BOTTOM_MARGIN + splitLocalY * fit;
+        // The cut scales with fit, so the stack loses the same half-socket at any board size.
+        board.setLocalPosition(0, BOARD_BOTTOM_MARGIN + (boardHeight / 2 - BOARD_BOTTOM_CUT) * fit, 0);
+        bandSplit = BOARD_BOTTOM_MARGIN + (splitLocalY - BOARD_BOTTOM_CUT) * fit;
+        boardFraction = (BOARD_BOTTOM_MARGIN + (boardHeight - BOARD_BOTTOM_CUT) * fit) / availableHeight;
     }
 
     function ensureLayout(laneCount: number, slotCount: number): void {
@@ -397,6 +406,7 @@ export async function createHud(app: AppBase, onActivate: (lane: number) => numb
         hitsButton,
         getSpeed: () => SPEEDS[speedIndex]!,
         getBandSplit: () => bandSplit,
+        getBoardFraction: () => boardFraction,
         destroy
     };
 }

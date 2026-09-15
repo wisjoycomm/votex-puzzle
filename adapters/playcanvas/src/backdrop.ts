@@ -116,9 +116,14 @@ export async function createBackdrop(app: AppBase, camera: Entity): Promise<Back
     });
     behind.addChild(groundEl);
 
+    // Not read back from element.height: a screen resize updates the element's calculated height
+    // without touching that field, so it can report a value the engine isn't rendering from.
+    let groundHeight = -1;
+
     function setGroundHeight(height: number): void {
         // Called every frame; the setter rebuilds the mesh, so only on a change.
-        if (groundEl.element!.height === height) return;
+        if (groundHeight === height) return;
+        groundHeight = height;
         groundEl.element!.height = height;
     }
 
