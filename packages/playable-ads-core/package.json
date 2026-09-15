@@ -2,8 +2,17 @@
   "name": "playable-ads-core",
   "version": "1.0.0",
   "description": "Engine-agnostic ad-network glue for playable ads: network detection, lifecycle gates, click-through.",
+  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "browser": "./dist/index.js",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "test": "node --experimental-strip-types --test test/*.test.ts"

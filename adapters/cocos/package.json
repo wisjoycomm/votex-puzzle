@@ -1,0 +1,12 @@
+{
+  "name": "cocos-adapter",
+  "private": true,
+  "uuid": "aa6ba43c-3f68-458f-b624-ebab873b642d",
+  "creator": {
+    "version": "3.8.6"
+  },
+  "dependencies": {
+    "core": "*",
+    "playable-ads-core": "*"
+  }
+}
