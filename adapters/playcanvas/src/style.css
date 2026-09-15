@@ -1,9 +1,13 @@
 body {
     margin: 0;
+    height: 100%;
     overflow: hidden;
 }
 
 canvas {
     display: block;
+    position: fixed;
+    inset: 0;
+    /* Stops the browser claiming drags as page gestures, so drag-to-rotate works on touch. */
     touch-action: none;
 }

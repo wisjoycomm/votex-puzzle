@@ -45,7 +45,13 @@ const QUEUE_OVERLAP = -16;
 const SLOT_SPACING = ACTIVE_SIZE + 32;
 const LANE_SPACING = QUEUE_SIZE + 16;
 const BOARD_BOTTOM_MARGIN = 2;
-const BOARD_HEIGHT = ACTIVE_SIZE + QUEUE_SIZE * 2.5;
+// Gap between the top of the queue stack and the firing-slot row.
+const SLOT_ROW_GAP = 10;
+// Clearance kept either side of the board when it has to shrink to fit a narrow viewport.
+const BOARD_SIDE_MARGIN = 12;
+// Most of the screen height the board may occupy before it shrinks — keeps the sculpture visible
+// on a short, wide window, which a playable ad can be resized into at any time.
+const BOARD_MAX_HEIGHT_FRACTION = 0.4;
 
 type Socket = { el: Entity; fill: Entity; text: Entity };
 
@@ -106,15 +112,17 @@ export async function createHud(app: AppBase, onActivate: (lane: number) => numb
     // Firing slots and lanes are independent in the core — a fixed pool of slots fed by however
     // many lanes the level defines — so they're laid out as two separate rows. Both live in one
     // board group so a hive flying from a lane into a slot is a plain local-position tween.
+    // Pivot is centred because child local positions are measured from the board's centre either
+    // way — claiming a bottom pivot just made every constant in ensureLayout read half a board too
+    // low. Size and vertical placement are both set there, once the real content height is known.
     const board = new Entity('hud-board');
     board.addComponent('element', {
         type: ELEMENTTYPE_GROUP,
         anchor: [0.5, 0, 0.5, 0],
-        pivot: [0.5, 0],
+        pivot: [0.5, 0.5],
         width: 0,
-        height: BOARD_HEIGHT
+        height: 0
     });
-    board.setLocalPosition(0, BOARD_BOTTOM_MARGIN, 0);
     gameplayUi.addChild(board);
 
     const slotEls: Socket[] = [];
@@ -198,9 +206,44 @@ export async function createHud(app: AppBase, onActivate: (lane: number) => numb
         if (pending > 0) shifting.add(laneIndex);
     }
 
+    // What the board needs at scale 1, measured once the lanes are laid out and then compared
+    // against the live viewport by fitBoard().
+    let boardWidth = 0;
+    let boardHeight = 0;
+
+    /**
+     * SCALEMODE_NONE means the px constants above are literal device pixels and nothing scales with
+     * the window, so a viewport narrower (or shorter) than the board pushes the outer slots off
+     * screen. A playable ad can be resized at any moment, so this shrinks the board to whatever
+     * actually fits and keeps its bottom edge pinned.
+     *
+     * Run from refresh(), i.e. every frame, rather than off a resize event: no listener to fall out
+     * of sync, and it also covers DPR changes and the canvas settling after a fill-mode resize.
+     */
+    function fitBoard(): void {
+        if (boardWidth <= 0) return;
+
+        // NOTE: `resolution` here is DEVICE pixels, so on a DPR-2 phone these px constants render
+        // at half the physical size they were tuned at (a third at DPR-3). Overriding the screen's
+        // `scale` or its `resolution` does not fix it — PlayCanvas recomputes both for a
+        // screen-space screen — so the UI is DPR-dependent until that's solved properly.
+        const res = screen.screen!.resolution;
+        const availableWidth = res.x;
+        const availableHeight = res.y;
+        const fit = Math.min(
+            1,
+            (availableWidth - BOARD_SIDE_MARGIN * 2) / boardWidth,
+            (availableHeight * BOARD_MAX_HEIGHT_FRACTION) / boardHeight
+        );
+        board.setLocalScale(fit, fit, fit);
+        // Scaling happens about the centred pivot, so half the shrink would otherwise lift the
+        // board off the bottom edge. Re-place it so the margin holds at any scale.
+        board.setLocalPosition(0, BOARD_BOTTOM_MARGIN + (boardHeight * fit) / 2, 0);
+    }
+
     function ensureLayout(laneCount: number, slotCount: number): void {
         if (laneEls.length > 0) return;
-        board.element!.width = Math.max(laneCount * LANE_SPACING, slotCount * SLOT_SPACING);
+        boardWidth = Math.max(laneCount * LANE_SPACING, slotCount * SLOT_SPACING);
 
         // Queue sockets stack bottom-up (front slot on top, nearest the slot row); the slot row
         // sits just above whatever height that stack ends up being.
@@ -210,7 +253,18 @@ export async function createHud(app: AppBase, onActivate: (lane: number) => numb
             queueY[q] = top;
             top += (q === 0 ? QUEUE_SIZE : QUEUE_PREVIEW_SIZE) - QUEUE_OVERLAP;
         }
-        const slotY = top + ACTIVE_SIZE / 2 - QUEUE_PREVIEW_SIZE / 2 + 10;
+        const slotY = top + ACTIVE_SIZE / 2 - QUEUE_PREVIEW_SIZE / 2 + SLOT_ROW_GAP;
+
+        // Derived, not declared: the board is exactly as tall as what it holds, so BOARD_BOTTOM_
+        // MARGIN means what it says and nothing has to be re-tuned when a row size changes.
+        boardHeight = slotY + ACTIVE_SIZE / 2;
+        board.element!.width = boardWidth;
+        board.element!.height = boardHeight;
+
+        // Everything above was measured from the bottom edge; children sit relative to the centre.
+        const originY = boardHeight / 2;
+        for (let q = 0; q < queueY.length; q++) queueY[q] = queueY[q]! - originY;
+        const slotRowY = slotY - originY;
 
         for (let l = 0; l < laneCount; l++) {
             const x = (l - (laneCount - 1) / 2) * LANE_SPACING;
@@ -240,7 +294,7 @@ export async function createHud(app: AppBase, onActivate: (lane: number) => numb
         }
 
         for (let i = 0; i < slotCount; i++) {
-            slotEls.push(addSocket(ACTIVE_SIZE, 0.5, (i - (slotCount - 1) / 2) * SLOT_SPACING, slotY));
+            slotEls.push(addSocket(ACTIVE_SIZE, 0.5, (i - (slotCount - 1) / 2) * SLOT_SPACING, slotRowY));
         }
     }
 
@@ -255,6 +309,7 @@ export async function createHud(app: AppBase, onActivate: (lane: number) => numb
     function refresh(state: GameState): void {
         tweens.update();
         ensureLayout(state.columns.length, state.slots.length);
+        fitBoard();
 
         gameplayUi.enabled = state.status === 'playing';
         endUi.win.enabled = state.status === 'won';
