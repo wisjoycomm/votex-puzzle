@@ -1,5 +1,6 @@
 import { GameCore, parseBoxyBlastLevel } from 'core';
 import type { BoxyBlastLevel } from 'core';
+import { isVisible, whenReady } from 'playable-ads-core';
 import {
     AppBase,
     AppOptions,
@@ -24,11 +25,16 @@ import {
     createGraphicsDevice
 } from 'playcanvas';
 
+import rawLevel from './assets/levels/teddy.json';
+import { createBackdrop } from './backdrop.ts';
 import { createBeeSwarm } from './bee.ts';
 import { createCameraRig } from './camera-rig.ts';
 import { createHud } from './hud.ts';
 import { buildSculpture, destroyCube, gridToLocal } from './sculpture.ts';
 import './style.css';
+
+// Nothing is drawn until the ad container says it is showing us. No-op without an MRAID SDK.
+await whenReady();
 
 const canvas = document.getElementById('application-canvas') as HTMLCanvasElement;
 
@@ -58,9 +64,7 @@ app.start();
 app.setCanvasFillMode(FILLMODE_FILL_WINDOW);
 app.setCanvasResolution(RESOLUTION_AUTO);
 
-const resize = () => app.resizeCanvas();
-window.addEventListener('resize', resize);
-app.on('destroy', () => window.removeEventListener('resize', resize));
+// No resize listener: an ad slot can resize without firing one. Polled in the update loop instead.
 
 const camera = new Entity('camera');
 camera.addComponent('camera', { clearColor: new Color(0.08, 0.08, 0.12) });
@@ -71,23 +75,47 @@ light.addComponent('light', { type: 'directional', intensity: 1 });
 light.setEulerAngles(90, 0, 0);
 app.root.addChild(light);
 
-const rawLevel: BoxyBlastLevel = await fetch('/levels/teddy.json').then((res) => res.json());
-const level = parseBoxyBlastLevel(rawLevel);
+// Minified copy of the BoxyBlast export. Regenerate with `npm run shrink-levels`.
+// Imported, not fetched — a playable has no server. Cast through `unknown`: TS widens the
+// cube quads to number[].
+const level = parseBoxyBlastLevel(rawLevel as unknown as BoxyBlastLevel);
 
 const sculpture = await buildSculpture(app, level);
 
 // Pulled back further so the sculpture reads smaller in frame (~3/5 its previous apparent size).
 const distance = sculpture.radius * 5;
-camera.setPosition(distance * 0.6, distance * 0.5, distance * 0.6);
-// Look below the sculpture's actual center so it sits higher in frame, leaving room for the HUD
-// queue stack at the bottom instead of the model reading vertically centered on screen.
-camera.lookAt(0, -sculpture.radius * 0.5, 0);
+// Level, straight-on camera: the tilt comes from the level's own DefaultRotation, applied to the
+// sculpture by the camera rig. An angled camera here would double-count it — with both, teddy ends
+// up on his back showing the camera the top of his head.
+// Aim height. The camera looks horizontally, so raising this pushes the sculpture DOWN the frame:
+// it drops into the gap between the hive hanging from the canopy and the HUD board at the bottom.
+const framingY = -sculpture.radius * 0.28;
+
+// fov is vertical, so a portrait slot clips the sculpture sideways. Back off by 1/aspect.
+function frameCamera(): void {
+    const aspect = canvas.clientWidth / Math.max(canvas.clientHeight, 1);
+    camera.setPosition(0, framingY, aspect < 1 ? distance / aspect : distance);
+    // Aimed below the sculpture's actual center so it sits higher in frame, leaving room for the
+    // HUD queue stack at the bottom instead of the model reading vertically centered on screen.
+    camera.lookAt(0, framingY, 0);
+}
+frameCamera();
+
+const backdrop = await createBackdrop(app, camera);
 
 const core = new GameCore(level, Date.now());
 const hud = await createHud(app, (lane) => core.activateColumn(lane));
 
-const rig = createCameraRig(canvas, sculpture.root, camera, hud.hitsButton);
-const bees = createBeeSwarm(app, camera, sculpture.mesh, distance, sculpture.root);
+const rig = createCameraRig(canvas, sculpture.root, camera, hud.hitsButton, level.initialRotation);
+const bees = createBeeSwarm(
+    app,
+    camera,
+    sculpture.mesh,
+    distance,
+    sculpture.root,
+    sculpture.radius,
+    backdrop
+);
 
 core.on('cubeShot', (e) => {
     // Local, not world: the sculpture keeps rotating during the flight, so a world position
@@ -109,7 +137,21 @@ core.on('cubeShot', (e) => {
 // No gameWon/gameLost handlers: the HUD switches between its gameplay, win and lose groups off
 // frame.state.status in refresh(), so there's no second copy of "is the round over" to drift.
 
+let lastWidth = 0;
+let lastHeight = 0;
+
 app.on('update', (dt: number) => {
+    // Poll for a resized ad slot; the camera reframes because distance depends on aspect.
+    if (canvas.clientWidth !== lastWidth || canvas.clientHeight !== lastHeight) {
+        lastWidth = canvas.clientWidth;
+        lastHeight = canvas.clientHeight;
+        app.resizeCanvas();
+        frameCamera();
+    }
+
+    // Off-screen or backgrounded: keep drawing, stop the clock.
+    if (!isVisible()) return;
+
     // The speed control scales the simulation and the bees together, but not the camera rig —
     // rotation follows the player's hand, and speeding that up just reads as a bug.
     const scaled = dt * hud.getSpeed();

@@ -2,10 +2,11 @@ import { Easing, Group, Tween } from '@tweenjs/tween.js';
 import { Asset, Color, Entity, Mat4, MeshInstance, Quat, Vec3, math } from 'playcanvas';
 import type { AppBase, GraphNode, Mesh } from 'playcanvas';
 
+import BEE_MODEL_URL from './assets/models/Bee_2.glb?inline';
 import { materialFor } from './colors.ts';
 import { CUBE_SCALE, CUBE_WORLD_SIZE } from './sculpture.ts';
 
-const BEE_MODEL_URL = '/models/Bee_2.glb';
+
 // inspect-glb: Bee_2.glb measures 1.2405 x 0.7109 x 1.2414 units and a cube is exactly 1 unit,
 // so this renders the bee at ~0.012 units — roughly 1% of a cube. Deliberate for now; raise
 // towards 0.5 for a bee that reads at about 60% of a cube.
@@ -21,9 +22,6 @@ const APPROACH_MS = 3600;
 // holds the same speed from the hive all the way onto the cube, with no slow-down at the grab.
 const FLIGHT_MS_PER_UNIT = 80;
 const FLY_OUT_MS = 4800;
-// ponytail: constant fraction of viewport height, not tied to the (not-yet-wired) Top Leaf art —
-// nudge this once that overlay's on-screen position is final.
-const EXIT_SCREEN_Y_FRACTION = 0.08;
 const WING_FLAP_HZ = 22;
 const WING_FLAP_DEG = 35;
 // The engine's forward is -Z; Bee_2.glb doesn't necessarily model its own forward that way.
@@ -37,6 +35,24 @@ const DEBUG_PATH_COLOR = new Color(0, 1, 0.4);
 // How much a leg's midpoint bows up/sideways off the straight line, as a fraction of leg length.
 const ARC_LIFT = 0.35;
 const ARC_BOW = 0.2;
+// Extra push outward before the climb. The bee leaves the sculpture already clear of it — the
+// standoff put it there — so this is 0 by default: pushing out to the full bounding radius is
+// safe but reads as the bee taking a long detour for no reason. Raise it if bees clip the model.
+const ESCAPE_OUT = 0;
+// How high the bee lifts before crossing to the hive, as a fraction of the bounding radius. That
+// radius is the half-DIAGONAL, so it badly overstates how tall the model is; ~0.7 of it clears a
+// boxy sculpture without flinging the bee into orbit.
+const ESCAPE_LIFT = 0.7;
+// Share of the exit flight spent swinging around the model, the rest heading for the hive.
+const ESCAPE_MS_SHARE = 0.45;
+// The last stretch: straight up from below the hive to inside it. Short, because it only covers
+// the line-up gap — it is the bee disappearing through the hole, not travelling.
+const ENTER_MS = 350;
+// Spread of the line-up point below the hive, in CSS px. Without it every bee converges on one
+// identical spot and a volley stacks into a single column; with it they fan out and each takes a
+// slightly different line into the hole. Presentation only — core stays deterministic.
+const APPROACH_SPREAD_X = 70;
+const APPROACH_SPREAD_Y = 40;
 // Land the bee on the face the path arrives at, not buried in the cube's center.
 const GRAB_GAP = 0.05;
 const GRAB_DISTANCE = CUBE_WORLD_SIZE / 2 + GRAB_GAP;
@@ -154,7 +170,16 @@ export function createBeeSwarm(
     camera: Entity,
     cubeMesh: Mesh,
     depth: number,
-    sculptureRoot: Entity
+    sculptureRoot: Entity,
+    /** Half-diagonal of the sculpture's bounding box. The exit flight stays outside it, which is
+     *  safe at any rotation because a sphere doesn't change shape when you spin it. */
+    sculptureRadius: number,
+    /** Where a bee lines up below the hive, and the point inside it they finish at. Both in canvas
+     *  (CSS px) space, queried per flight rather than captured once, so they survive a resize. */
+    hivePos: {
+        approachScreenPos: () => { x: number; y: number };
+        entranceScreenPos: () => { x: number; y: number };
+    }
 ): BeeSwarm {
     const tweens = new Group();
     const pool: BeeInstance[] = [];
@@ -349,6 +374,63 @@ export function createBeeSwarm(
             .start(clock);
     }
 
+    /**
+     * Swings around the sculpture in WORLD space, staying at least as far from `centre` as the
+     * nearer endpoint. The local-space flyOrbit above rides the model's rotation, which is right
+     * for the approach; this one doesn't, which is what the exit needs — the hive is fixed on
+     * screen while the sculpture spins underneath.
+     *
+     * Safe regardless of how the player has rotated the model, because a bounding sphere is
+     * rotation-invariant: outside it is outside it, at any angle.
+     */
+    function flyWorldOrbit(
+        riders: Rider[],
+        from: Vec3,
+        to: Vec3,
+        centre: Vec3,
+        ms: number,
+        easing: typeof Easing.Quadratic.Out,
+        onComplete: () => void,
+        facing?: Entity
+    ): void {
+        const fromDir = new Vec3().sub2(from, centre);
+        const toDir = new Vec3().sub2(to, centre);
+        const fromLen = Math.max(fromDir.length(), 1e-3);
+        const toLen = Math.max(toDir.length(), 1e-3);
+        fromDir.normalize();
+        toDir.normalize();
+
+        // Opposite endpoints have no well-defined arc: the midpoint collapses onto the centre,
+        // which is the one place we must not pass through.
+        if (fromDir.dot(toDir) < -0.999) {
+            flyWorldArc(riders, from, to, ms, easing, onComplete, facing);
+            return;
+        }
+
+        const progress = { t: 0 };
+        const dir = new Vec3();
+        const pos = new Vec3();
+        const prev = new Vec3().copy(from);
+        const riderPos = new Vec3();
+        const heading = new Vec3();
+
+        new Tween(progress, tweens)
+            .to({ t: 1 }, ms)
+            .easing(easing)
+            .onUpdate(() => {
+                dir.lerp(fromDir, toDir, progress.t).normalize();
+                pos.copy(dir).mulScalar(fromLen + (toLen - fromLen) * progress.t).add(centre);
+                for (const r of riders) r.entity.setPosition(riderPos.add2(pos, r.offset));
+
+                if (facing && progress.t > 0) {
+                    faceAlong(facing, heading.sub2(pos, prev));
+                }
+                prev.copy(pos);
+            })
+            .onComplete(onComplete)
+            .start(clock);
+    }
+
     // Tweens a single progress scalar and evaluates a quadratic bezier from it each frame,
     // rather than lerping x/y/z independently (which is what produces a straight line).
     // World space: the final leg, once the bee is clear of the sculpture.
@@ -359,9 +441,11 @@ export function createBeeSwarm(
         ms: number,
         easing: typeof Easing.Quadratic.Out,
         onComplete: () => void,
-        facing?: Entity
+        facing?: Entity,
+        /** Overrides the bowed control point — the midpoint makes the leg a straight line. */
+        controlOverride?: Vec3
     ): void {
-        const control = arcControlPoint(from, to);
+        const control = controlOverride ?? arcControlPoint(from, to);
         const progress = { t: 0 };
         const pos = new Vec3();
         const riderPos = new Vec3();
@@ -370,19 +454,19 @@ export function createBeeSwarm(
             .to({ t: 1 }, ms)
             .easing(easing)
             .onUpdate(() => {
-                const u = 1 - progress.t;
-                pos.x = u * u * from.x + 2 * u * progress.t * control.x + progress.t * progress.t * to.x;
-                pos.y = u * u * from.y + 2 * u * progress.t * control.y + progress.t * progress.t * to.y;
-                pos.z = u * u * from.z + 2 * u * progress.t * control.z + progress.t * progress.t * to.z;
+                const t = progress.t;
+                const u = 1 - t;
+                pos.x = u * u * from.x + 2 * u * t * control.x + t * t * to.x;
+                pos.y = u * u * from.y + 2 * u * t * control.y + t * t * to.y;
+                pos.z = u * u * from.z + 2 * u * t * control.z + t * t * to.z;
                 for (const r of riders) r.entity.setPosition(riderPos.add2(pos, r.offset));
 
                 if (facing) {
-                    // Tangent of the quadratic bezier at t: 2(1-t)(c-from) + 2t(to-c).
-                    const u = 1 - progress.t;
+                    // Quadratic tangent: 2(1-t)(c-from) + 2t(to-c).
                     heading.set(
-                        2 * u * (control.x - from.x) + 2 * progress.t * (to.x - control.x),
-                        2 * u * (control.y - from.y) + 2 * progress.t * (to.y - control.y),
-                        2 * u * (control.z - from.z) + 2 * progress.t * (to.z - control.z)
+                        2 * u * (control.x - from.x) + 2 * t * (to.x - control.x),
+                        2 * u * (control.y - from.y) + 2 * t * (to.y - control.y),
+                        2 * u * (control.z - from.z) + 2 * t * (to.z - control.z)
                     );
                     faceAlong(facing, heading);
                 }
@@ -402,7 +486,6 @@ export function createBeeSwarm(
         const bee = inst.root;
 
         const camComp = camera.camera!;
-        const canvas = app.graphicsDevice.canvas;
 
         // The hive sits in screen space; the path is local to the sculpture. Bring the launch
         // point into that space rather than hauling the whole path out of it.
@@ -421,11 +504,18 @@ export function createBeeSwarm(
         inst.cube.setLocalPosition(localCubePos);
         inst.cube.enabled = true;
 
-        const exit = camComp.screenToWorld(
-            canvas.clientWidth / 2,
-            canvas.clientHeight * EXIT_SCREEN_Y_FRACTION,
+        // Two points on the hive: one below it to line up at, one inside it to finish at. Sharing
+        // a screen x means they share a world x/z at this depth, so the last leg is purely vertical.
+        const approachPoint = hivePos.approachScreenPos();
+        const entrancePoint = hivePos.entranceScreenPos();
+        // Jitter only the line-up point, never the entrance: the bees fan out on the way in and
+        // still converge on the one hole.
+        const lineUp = camComp.screenToWorld(
+            approachPoint.x + (Math.random() - 0.5) * APPROACH_SPREAD_X,
+            approachPoint.y + Math.random() * APPROACH_SPREAD_Y,
             depth
         );
+        const exit = camComp.screenToWorld(entrancePoint.x, entrancePoint.y, depth);
 
         // Which face to land on. Without a path (shouldn't happen for a cube we just shot)
         // approach straight from wherever the bee launched, as before.
@@ -471,17 +561,77 @@ export function createBeeSwarm(
         inst.debugPoints = DEBUG_PATHS ? [standoff, ...channel, grabLocal] : null;
 
         const liftAway = (): void => {
-            // Clear of the sculpture now, so finish in world space — the lift shouldn't swing
+            // Clear of the sculpture now, so finish in world space — the exit shouldn't swing
             // back around with the model if the player keeps dragging.
             const from = inst.cube.getPosition().clone();
             const beeOffset = new Vec3().sub2(bee.getPosition(), from);
-            flyWorldArc(
-                [{ entity: inst.cube, offset: zero }, { entity: bee, offset: beeOffset }],
+            const riders = [
+                { entity: inst.cube, offset: zero },
+                { entity: bee, offset: beeOffset }
+            ];
+
+            const centre = sculptureRoot.getPosition().clone();
+
+            // Where the bee comes out of the orbit: pushed to the escape radius horizontally, and
+            // lifted to clear the top of the sphere — but never above the line-up point.
+            //
+            // That ceiling is the important part. The line-up point sits BELOW the hive, so if the
+            // bee were allowed to reach hive height first it would have to drop back down to it
+            // and then climb again. Capping here means every leg from now on only ever goes up.
+            const flat = new Vec3(from.x - centre.x, 0, from.z - centre.z);
+            const flatDistance = flat.length();
+            if (flatDistance < 1e-6) flat.set(1, 0, 0);
+            flat.normalize();
+            // Keep whatever horizontal distance the bee already has, plus ESCAPE_OUT — don't drag
+            // it out to the bounding radius it never needed to reach.
+            const escapeRadius = flatDistance + ESCAPE_OUT;
+            const clearTop = Math.max(from.y, centre.y + sculptureRadius * ESCAPE_LIFT);
+            const escape = new Vec3(
+                centre.x + flat.x * escapeRadius,
+                Math.min(clearTop, lineUp.y),
+                centre.z + flat.z * escapeRadius
+            );
+
+            // Control at the midpoint makes a quadratic a straight line, which is what keeps a leg
+            // exactly radial — and therefore provably outside the sphere.
+            const straight = (a: Vec3, b: Vec3): Vec3 => new Vec3().add2(a, b).mulScalar(0.5);
+
+            // Leg 3: straight up from below the hive to inside it, through the hole.
+            const riseIn = (): void =>
+                flyWorldArc(
+                    riders,
+                    lineUp,
+                    exit,
+                    ENTER_MS,
+                    Easing.Linear.None,
+                    () => release(inst),
+                    bee,
+                    straight(lineUp, exit)
+                );
+
+            // Leg 2: up and across to the line-up point below the hive. Both ends sit at or above
+            // the top of the sphere, so the straight line between them clears the model.
+            const crossTo = (): void =>
+                flyWorldArc(
+                    riders,
+                    escape,
+                    lineUp,
+                    Math.max(FLY_OUT_MS * (1 - ESCAPE_MS_SHARE) - ENTER_MS, 1),
+                    Easing.Linear.None,
+                    riseIn,
+                    bee,
+                    straight(escape, lineUp)
+                );
+
+            // Leg 1: swing AROUND the model and out to the escape sphere at the same time.
+            flyWorldOrbit(
+                riders,
                 from,
-                exit,
-                FLY_OUT_MS,
-                Easing.Quadratic.In,
-                () => release(inst),
+                escape,
+                centre,
+                FLY_OUT_MS * ESCAPE_MS_SHARE,
+                Easing.Linear.None,
+                crossTo,
                 bee
             );
         };
@@ -528,7 +678,7 @@ export function createBeeSwarm(
                 bee
             );
 
-        flyOrbit(beeOnly, originLocal, standoff, APPROACH_MS, Easing.Quadratic.Out, dropIn, bee);
+        flyOrbit(beeOnly, originLocal, standoff, APPROACH_MS, Easing.Quadratic.In, dropIn, bee);
     }
 
     const debugA = new Vec3();

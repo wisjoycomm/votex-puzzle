@@ -19,13 +19,30 @@ export function createCameraRig(
     canvas: HTMLCanvasElement,
     root: Entity,
     camera: Entity,
-    hitsUi: (x: number, y: number) => boolean
+    hitsUi: (x: number, y: number) => boolean,
+    initialRotation?: V3
 ): CameraRig {
-    // target* is set from input; yaw/pitch ease toward it each frame (see update()).
-    let targetYaw = 0;
-    let targetPitch = 0;
-    let yaw = 0;
-    let pitch = 0;
+    // The level's DefaultRotation: the angle its author wants the sculpture first seen at. Only
+    // x (pitch) and y (yaw) are used — the rig has no roll, deliberately.
+    //
+    // Negated because the level editor is left-handed (Y-up, +Z forward) and PlayCanvas is
+    // right-handed, which flips the sense of a rotation about X and Y. Taken at face value the
+    // teddy's +45 lays it on its back and shows the camera the top of its head.
+    //
+    // Pitch is clamped like any other, so a level can't open somewhere the drag rig could never
+    // return to.
+    const startPitch = Math.max(
+        -PITCH_LIMIT,
+        Math.min(PITCH_LIMIT, -(initialRotation?.x ?? 0))
+    );
+    const startYaw = -(initialRotation?.y ?? 0);
+
+    // target* is set from input; yaw/pitch ease toward it each frame (see update()). Both start
+    // at the level's angle so it opens there rather than swinging into it from zero.
+    let targetYaw = startYaw;
+    let targetPitch = startPitch;
+    let yaw = startYaw;
+    let pitch = startPitch;
     let dragging = false;
     let lastX = 0;
     let lastY = 0;

@@ -2,6 +2,7 @@ import type { LevelDef, V3 } from 'core';
 import { Asset, Entity, MeshInstance, Vec3 } from 'playcanvas';
 import type { AppBase, Mesh } from 'playcanvas';
 
+import CUBE_MODEL_URL from './assets/models/bee-cube-2.glb?inline';
 import { materialFor } from './colors.ts';
 
 export type Sculpture = {
@@ -25,7 +26,6 @@ export function gridToLocal(sculpture: Sculpture, p: V3, out = new Vec3()): Vec3
     return out.set(p.x - sculpture.center.x, p.y - sculpture.center.y, p.z - sculpture.center.z);
 }
 
-const CUBE_MODEL_URL = '/models/bee-cube-2.glb';
 // inspect-glb: bee-cube-2.glb is a single mesh, 105x105x105, centered at its own origin — scale it
 // down to fit the 1-unit grid spacing the rest of this file assumes. Slightly oversized (not an
 // exact 1/105) so neighboring cubes overlap a hair instead of leaving a seam a cube behind it
@@ -59,7 +59,8 @@ async function loadCubeMesh(app: AppBase): Promise<Mesh> {
 
     const container = asset.resource as GlbContainer;
     const mesh = container.renders[0]?.resource?.meshes[0];
-    if (!mesh) throw new Error(`${CUBE_MODEL_URL}: container has no mesh`);
+    // Not CUBE_MODEL_URL — it's a huge data URI once inlined.
+    if (!mesh) throw new Error('bee-cube-2.glb: container has no mesh');
     return mesh;
 }
 

@@ -3,6 +3,9 @@ import type { GameState } from 'core';
 import { Asset, Color, ELEMENTTYPE_GROUP, Entity, SCALEMODE_NONE } from 'playcanvas';
 import type { AppBase, ButtonComponent } from 'playcanvas';
 
+import fontData from './assets/fonts/courier.json';
+import FONT_PNG_URL from './assets/fonts/courier.png?inline';
+import SLOT_TEXTURE_URL from './assets/sprites/Slot.webp?inline';
 import { hexFor } from './colors.ts';
 import { createEndUi } from './end-ui.ts';
 import { elementCenter, loadAsset, makeFill, makeFullScreenGroup, makeImage, makeText } from './ui-elements.ts';
@@ -27,8 +30,6 @@ export type Hud = {
     destroy(): void;
 };
 
-const SLOT_TEXTURE_URL = '/sprites/Slot.png';
-const FONT_URL = '/fonts/courier.json';
 
 // x1 is the tuned look (flight timings in bee.ts are set for it); the rest are speed-ups for a
 // player who doesn't want to watch every bee. Cycles 1 -> 2 -> 3 -> 5 -> 1.
@@ -38,9 +39,9 @@ const SPEED_SIZE = 52;
 const SPEED_MARGIN = 64;
 
 const QUEUE_PREVIEW = 3;
-const ACTIVE_SIZE = 80;
-const QUEUE_SIZE = 60;
-const QUEUE_PREVIEW_SIZE = QUEUE_SIZE * 0.82;
+const ACTIVE_SIZE = 100;
+const QUEUE_SIZE = 80;
+const QUEUE_PREVIEW_SIZE = QUEUE_SIZE;
 const QUEUE_OVERLAP = -16;
 const SLOT_SPACING = ACTIVE_SIZE + 32;
 const LANE_SPACING = QUEUE_SIZE + 16;
@@ -65,9 +66,11 @@ type LaneEls = {
 // A pure view of GameCore's state: every element is re-derived from `state` on each call, never
 // stored as its own source of truth.
 export async function createHud(app: AppBase, onActivate: (lane: number) => number | null): Promise<Hud> {
+    // Font loads by PNG + inline data, not by .json url: FontHandler does url.replace('.json',
+    // '.png'), which a data URI can't satisfy.
     const [slotTexture, font] = await Promise.all([
         loadAsset(app, new Asset('slot', 'texture', { url: SLOT_TEXTURE_URL })),
-        loadAsset(app, new Asset('hud-font', 'font', { url: FONT_URL }))
+        loadAsset(app, new Asset('hud-font', 'font', { url: FONT_PNG_URL }, fontData))
     ]);
 
     // SCALEMODE_NONE (not BLEND): a screen-space screen's `resolution` is the graphics device's
@@ -89,8 +92,8 @@ export async function createHud(app: AppBase, onActivate: (lane: number) => numb
     screen.addChild(gameplayUi);
 
     const endUi = createEndUi(font);
-    screen.addChild(endUi.win);
-    screen.addChild(endUi.lose);
+    screen.addChild(endUi.win.root);
+    screen.addChild(endUi.lose.root);
 
     // Speed control, top-right. Cycles x1 -> x2 -> x3 -> x5 -> x1; main.ts scales the simulation dt
     // by whatever this reports, so bee flight and firing rate speed up together.
@@ -312,8 +315,8 @@ export async function createHud(app: AppBase, onActivate: (lane: number) => numb
         fitBoard();
 
         gameplayUi.enabled = state.status === 'playing';
-        endUi.win.enabled = state.status === 'won';
-        endUi.lose.enabled = state.status === 'lost';
+        endUi.win.root.enabled = state.status === 'won';
+        endUi.lose.root.enabled = state.status === 'lost';
 
         state.slots.forEach((hive, i) => {
             // Slot sockets always show, empty or not — only the queue stacks hide when empty.
@@ -352,8 +355,12 @@ export async function createHud(app: AppBase, onActivate: (lane: number) => numb
     }
 
     function hitsButton(x: number, y: number): boolean {
-        // Once an end-of-round overlay is up the gameplay UI is gone, so nothing here can be hit
-        // and a drag anywhere should still rotate the sculpture.
+        // The CTA is the one thing on an end screen that must never lose a click to the drag rig.
+        for (const panel of [endUi.win, endUi.lose]) {
+            if (panel.root.enabled && covers(panel.cta, x, y)) return true;
+        }
+        // Otherwise, once an overlay is up the gameplay UI is gone, so nothing here can be hit and
+        // a drag anywhere should still rotate the sculpture.
         if (!gameplayUi.enabled) return false;
         if (covers(speedButton, x, y)) return true;
         return laneEls.some(({ queueSlots }) => {

@@ -6,17 +6,24 @@
     "type": "module",
     "scripts": {
         "build": "vite build",
+        "build:all": "npm run build:meta && npm run build:google && npm run build:mraid",
+        "build:google": "vite build --mode google",
+        "build:meta": "vite build --mode meta",
+        "build:mraid": "vite build --mode mraid",
         "dev": "vite",
         "fmt": "prettier --check .",
         "fmt:fix": "prettier --write .",
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
+        "shrink-levels": "node scripts/shrink-level.mjs ../../packages/core/src/teddy_burgundy.json src/assets/levels/teddy.json && node scripts/shrink-level.mjs levels-src/easy.json src/assets/levels/easy.json",
         "start": "vite preview",
+        "to-webp": "node scripts/to-webp.mjs",
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {
         "@tweenjs/tween.js": "^25.0.0",
         "core": "*",
+        "playable-ads-core": "*",
         "playcanvas": "^2.22.0"
     },
     "devDependencies": {
@@ -24,7 +31,8 @@
         "eslint": "^9.39.5",
         "prettier": "^3.9.6",
         "typescript": "~6.0.3",
-        "vite": "^8.2.2"
+        "vite": "^8.2.2",
+        "vite-plugin-singlefile": "^2.3.3"
     },
     "engines": {
         "node": ">=22.23.2"

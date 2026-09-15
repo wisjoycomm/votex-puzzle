@@ -1,3 +1,7 @@
 .claude
 .agents
 public/ammo
+
+# Generated and deliberately minified — reformatting costs bundle bytes.
+src/assets/levels
+src/assets/fonts
