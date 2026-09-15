@@ -65,6 +65,9 @@ export class Shooter {
             return;
         }
 
+        // Captured before the removal: afterwards the cell is empty and has no route to it.
+        const path = grid.pathTo(target, viewDir);
+
         grid.remove(target);
         this.hive.ammo--;
         events.push({
@@ -73,6 +76,7 @@ export class Shooter {
             cell: target,
             color: this.hive.color,
             ammoRemaining: this.hive.ammo,
+            path,
             at: time,
         });
 

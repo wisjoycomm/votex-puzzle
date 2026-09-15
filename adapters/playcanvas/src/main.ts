@@ -20,13 +20,14 @@ import {
     ScreenComponentSystem,
     TextureHandler,
     TouchDevice,
+    Vec3,
     createGraphicsDevice
 } from 'playcanvas';
 
 import { createBeeSwarm } from './bee.ts';
 import { createCameraRig } from './camera-rig.ts';
 import { createHud } from './hud.ts';
-import { buildSculpture, cellKey, destroyCube } from './sculpture.ts';
+import { buildSculpture, destroyCube, gridToLocal } from './sculpture.ts';
 import './style.css';
 
 const canvas = document.getElementById('application-canvas') as HTMLCanvasElement;
@@ -70,7 +71,7 @@ light.addComponent('light', { type: 'directional', intensity: 1 });
 light.setEulerAngles(90, 0, 0);
 app.root.addChild(light);
 
-const rawLevel: BoxyBlastLevel = await fetch('/levels/easy.json').then((res) => res.json());
+const rawLevel: BoxyBlastLevel = await fetch('/levels/teddy.json').then((res) => res.json());
 const level = parseBoxyBlastLevel(rawLevel);
 
 const sculpture = await buildSculpture(app, level);
@@ -86,23 +87,36 @@ const core = new GameCore(level, Date.now());
 const hud = await createHud(app, (lane) => core.activateColumn(lane));
 
 const rig = createCameraRig(canvas, sculpture.root, camera, hud.hitsButton);
-const bees = createBeeSwarm(app, camera, sculpture.mesh, distance);
+const bees = createBeeSwarm(app, camera, sculpture.mesh, distance, sculpture.root);
 
 core.on('cubeShot', (e) => {
-    const cubePos = sculpture.cubes.get(cellKey(e.cell))?.getPosition().clone();
+    // Local, not world: the sculpture keeps rotating during the flight, so a world position
+    // captured now would be stale by the time the bee arrives.
+    const cubeLocal = gridToLocal(sculpture, e.cell);
     destroyCube(app, sculpture, e.cell);
-    if (!cubePos) return;
 
-    bees.spawn(cubePos, e.color, hud.getSlotScreenPos(e.slot));
+    // core hands back the route it proved the cube was reachable by — same coordinates as the
+    // grid, so it just needs centering like any other cell.
+    const path = e.path
+        ? {
+            points: e.path.points.map((p) => gridToLocal(sculpture, p)),
+            face: new Vec3(e.path.face.x, e.path.face.y, e.path.face.z)
+        }
+        : undefined;
+
+    bees.spawn(cubeLocal, e.color, hud.getSlotScreenPos(e.slot), path);
 });
-core.on('gameWon', () => hud.setStatus('Cleared!'));
-core.on('gameLost', () => hud.setStatus('No moves left'));
+// No gameWon/gameLost handlers: the HUD switches between its gameplay, win and lose groups off
+// frame.state.status in refresh(), so there's no second copy of "is the round over" to drift.
 
 app.on('update', (dt: number) => {
+    // The speed control scales the simulation and the bees together, but not the camera rig —
+    // rotation follows the player's hand, and speeding that up just reads as a bug.
+    const scaled = dt * hud.getSpeed();
     rig.update(dt);
-    bees.update(dt);
+    bees.update(scaled);
     core.setViewDirection(rig.getViewDir());
-    const frame = core.update(dt);
+    const frame = core.update(scaled);
     hud.refresh(frame.state);
 });
 

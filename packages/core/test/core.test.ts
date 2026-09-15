@@ -227,3 +227,61 @@ test("GameCore boots teddy_burgundy.json and fires from column 0 without throwin
 
     assert.equal(core.getState().status, "playing");
 });
+
+test("every shot reports a flyable path: axis-aligned, clear of cubes, onto the right face", () => {
+    const level = parseBoxyBlastLevel(teddyBurgundy);
+    const { nx, ny, nz } = level.size;
+    // A live copy of the grid, kept in step with the shots so "was this cell empty at the time"
+    // is checked against the state the path was actually produced from.
+    const cells = level.cells.slice();
+    const at = (p: { x: number; y: number; z: number }) =>
+        cells[p.x + p.y * nx + p.z * nx * ny];
+    const inside = (p: { x: number; y: number; z: number }) =>
+        p.x >= 0 && p.x < nx && p.y >= 0 && p.y < ny && p.z >= 0 && p.z < nz;
+
+    const core = new GameCore(level, 1);
+    core.setViewDirection({ x: 0.6, y: 0.5, z: 0.6 });
+
+    let checked = 0;
+    core.on("cubeShot", (e) => {
+        const path = e.path;
+        assert.ok(path, `shot at ${JSON.stringify(e.cell)} reported no path`);
+
+        // The bee enters from outside the grid.
+        assert.ok(!inside(path.points[0]!), "path must start outside the grid");
+
+        // The bend budget is 2, so at most 3 straight segments.
+        assert.ok(path.points.length <= 4, `path has ${path.points.length} waypoints`);
+
+        // Each leg runs along one axis, and every cell it crosses is empty.
+        for (let i = 1; i < path.points.length; i++) {
+            const a = path.points[i - 1]!, b = path.points[i]!;
+            const dx = Math.sign(b.x - a.x), dy = Math.sign(b.y - a.y), dz = Math.sign(b.z - a.z);
+            const axes = Math.abs(dx) + Math.abs(dy) + Math.abs(dz);
+            assert.equal(axes, 1, `leg ${i} is not axis-aligned`);
+
+            const cur = { x: a.x, y: a.y, z: a.z };
+            while (cur.x !== b.x || cur.y !== b.y || cur.z !== b.z) {
+                cur.x += dx; cur.y += dy; cur.z += dz;
+                if (!inside(cur)) continue;
+                assert.equal(at(cur), null, `path crosses a cube at ${JSON.stringify(cur)}`);
+            }
+        }
+
+        // The last waypoint sits one step off the cube, along the face reported.
+        const last = path.points[path.points.length - 1]!;
+        assert.deepEqual(
+            { x: e.cell.x + path.face.x, y: e.cell.y + path.face.y, z: e.cell.z + path.face.z },
+            last,
+            "final waypoint must be the cell adjacent to the cube along `face`",
+        );
+
+        cells[e.cell.x + e.cell.y * nx + e.cell.z * nx * ny] = null;
+        checked++;
+    });
+
+    for (let i = 0; i < 5; i++) core.activateColumn(i);
+    for (let f = 0; f < 600; f++) core.update(1 / 60);
+
+    assert.ok(checked > 50, `expected plenty of shots to check, got ${checked}`);
+});

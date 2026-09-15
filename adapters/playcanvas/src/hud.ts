@@ -1,17 +1,11 @@
 import { Easing, Group, Tween } from '@tweenjs/tween.js';
-import {
-    Asset,
-    Color,
-    ELEMENTTYPE_GROUP,
-    ELEMENTTYPE_IMAGE,
-    ELEMENTTYPE_TEXT,
-    Entity,
-    SCALEMODE_NONE
-} from 'playcanvas';
-import type { AppBase, ButtonComponent } from 'playcanvas';
 import type { GameState } from 'core';
+import { Asset, Color, ELEMENTTYPE_GROUP, Entity, SCALEMODE_NONE } from 'playcanvas';
+import type { AppBase, ButtonComponent } from 'playcanvas';
 
 import { hexFor } from './colors.ts';
+import { createEndUi } from './end-ui.ts';
+import { elementCenter, loadAsset, makeFill, makeFullScreenGroup, makeImage, makeText } from './ui-elements.ts';
 
 const FLY_MS = 220;
 // Fill size as a fraction of its socket — 1 so the colored hex exactly fits the Slot.png outline
@@ -19,30 +13,39 @@ const FLY_MS = 220;
 const FILL_RATIO = 1;
 
 export type Hud = {
+    /** Drives everything, including which of the three UI groups is showing. */
     refresh(state: GameState): void;
-    setStatus(text: string): void;
     /** Screen-space center of a firing slot, for effects that should originate from where a shot
      *  visually comes from. */
     getSlotScreenPos(slot: number): { x: number; y: number } | undefined;
-    /** Whether a screen point (CSS px) lands on a currently-clickable queue-front button — lets
-     *  the camera drag rig skip starting a drag when a click actually targets the UI, now that
-     *  both render on the same canvas instead of a DOM overlay sitting above it. */
+    /** Whether a screen point (CSS px) lands on a currently-clickable button — lets the camera
+     *  drag rig skip starting a drag when a click actually targets the UI, now that both render
+     *  on the same canvas instead of a DOM overlay sitting above it. */
     hitsButton(x: number, y: number): boolean;
+    /** Simulation speed multiplier the player has selected. */
+    getSpeed(): number;
     destroy(): void;
-}
+};
 
 const SLOT_TEXTURE_URL = '/sprites/Slot.png';
 const FONT_URL = '/fonts/courier.json';
+
+// x1 is the tuned look (flight timings in bee.ts are set for it); the rest are speed-ups for a
+// player who doesn't want to watch every bee. Cycles 1 -> 2 -> 3 -> 5 -> 1.
+const SPEEDS = [1, 2, 3, 5];
+const SPEED_DEFAULT = 1;
+const SPEED_SIZE = 52;
+const SPEED_MARGIN = 64;
 
 const QUEUE_PREVIEW = 3;
 const ACTIVE_SIZE = 80;
 const QUEUE_SIZE = 60;
 const QUEUE_PREVIEW_SIZE = QUEUE_SIZE * 0.82;
-const QUEUE_OVERLAP = 15;
-const SLOT_SPACING = ACTIVE_SIZE + 16;
+const QUEUE_OVERLAP = -16;
+const SLOT_SPACING = ACTIVE_SIZE + 32;
 const LANE_SPACING = QUEUE_SIZE + 16;
-const BOARD_BOTTOM_MARGIN = 24;
-const BOARD_HEIGHT = ACTIVE_SIZE + QUEUE_SIZE * 3 + 40;
+const BOARD_BOTTOM_MARGIN = 2;
+const BOARD_HEIGHT = ACTIVE_SIZE + QUEUE_SIZE * 2.5;
 
 type Socket = { el: Entity; fill: Entity; text: Entity };
 
@@ -51,84 +54,11 @@ type LaneEls = {
     queueSlots: (Socket & { button: ButtonComponent | null })[];
     /** Queues only ever shrink from the front, so a drop here means the stack shifted up by one. */
     lastQueueLen: number;
-}
-
-function loadAsset(app: AppBase, asset: Asset): Promise<Asset> {
-    return new Promise((resolve, reject) => {
-        app.assets.add(asset);
-        asset.once('load', () => resolve(asset));
-        asset.once('error', (err: string) => reject(new Error(err)));
-        app.assets.load(asset);
-    });
-}
-
-// Average of an element's 4 canvas-space corners (CSS px, same space DOM getBoundingClientRect
-// used to report) — the Element-system equivalent, used to place effects.
-function elementCenter(entity: Entity): { x: number; y: number } {
-    const c = entity.element!.canvasCorners;
-    return {
-        x: (c[0]!.x + c[1]!.x + c[2]!.x + c[3]!.x) / 4,
-        y: (c[0]!.y + c[1]!.y + c[2]!.y + c[3]!.y) / 4
-    };
-}
-
-function makeImage(size: number, textureAsset: Asset | null, opacity: number, useInput = false): Entity {
-    const el = new Entity();
-    el.addComponent('element', {
-        type: ELEMENTTYPE_IMAGE,
-        anchor: [0.5, 0.5, 0.5, 0.5],
-        pivot: [0.5, 0.5],
-        width: size,
-        height: size,
-        textureAsset: textureAsset?.id,
-        opacity,
-        // ElementInput only hit-tests elements with this set — without it a 'button' component
-        // silently never receives clicks at all, no error, nothing (found the hard way).
-        useInput
-    });
-    return el;
-}
-
-// Colored dot showing a hive's color, layered on top of its socket — reuses the same Slot.png
-// texture (tinted via `color`) so the dot takes the socket's hex silhouette instead of rendering
-// as a plain square.
-function makeFill(size: number, textureAsset: Asset): Entity {
-    const el = makeImage(size, textureAsset, 1);
-    el.element!.color = new Color(1, 1, 1);
-    el.enabled = false;
-    return el;
-}
-
-function makeText(
-    fontAsset: Asset,
-    fontSize: number,
-    size: number,
-    anchor: [number, number, number, number] = [0.5, 0.5, 0.5, 0.5],
-    pivot: [number, number] = [0.5, 0.5]
-): Entity {
-    const el = new Entity();
-    el.addComponent('element', {
-        type: ELEMENTTYPE_TEXT,
-        anchor,
-        pivot,
-        width: size,
-        height: size,
-        autoWidth: false,
-        autoHeight: false,
-        fontAsset: fontAsset.id,
-        fontSize,
-        color: new Color(1, 1, 1),
-        text: ''
-    });
-    return el;
-}
+};
 
 // A pure view of GameCore's state: every element is re-derived from `state` on each call, never
 // stored as its own source of truth.
-export async function createHud(
-    app: AppBase,
-    onActivate: (lane: number) => number | null
-): Promise<Hud> {
+export async function createHud(app: AppBase, onActivate: (lane: number) => number | null): Promise<Hud> {
     const [slotTexture, font] = await Promise.all([
         loadAsset(app, new Asset('slot', 'texture', { url: SLOT_TEXTURE_URL })),
         loadAsset(app, new Asset('hud-font', 'font', { url: FONT_URL }))
@@ -146,9 +76,32 @@ export async function createHud(
     });
     app.root.addChild(screen);
 
-    const status = makeText(font, 28, 600, [0.5, 1, 0.5, 1], [0.5, 1]);
-    status.setLocalPosition(0, -40, 0);
-    screen.addChild(status);
+    // Three sibling groups, exactly one live at a time, switched off GameState.status in refresh().
+    // Nothing here listens for gameWon/gameLost: the HUD stays a pure view of state, so there is
+    // no second source of truth to fall out of step after a reset or replay.
+    const gameplayUi = makeFullScreenGroup('hud-gameplay');
+    screen.addChild(gameplayUi);
+
+    const endUi = createEndUi(font);
+    screen.addChild(endUi.win);
+    screen.addChild(endUi.lose);
+
+    // Speed control, top-right. Cycles x1 -> x2 -> x3 -> x5 -> x1; main.ts scales the simulation dt
+    // by whatever this reports, so bee flight and firing rate speed up together.
+    let speedIndex = SPEEDS.indexOf(SPEED_DEFAULT);
+    const speedButton = makeImage(SPEED_SIZE, slotTexture, 0.7, true, [1, 1, 1, 1], [1, 1]);
+    speedButton.setLocalPosition(-SPEED_MARGIN, -SPEED_MARGIN, 0);
+    gameplayUi.addChild(speedButton);
+
+    const speedLabel = makeText(font, 18, SPEED_SIZE);
+    speedButton.addChild(speedLabel);
+    speedLabel.element!.text = `x${SPEEDS[speedIndex]}`;
+
+    speedButton.addComponent('button');
+    speedButton.button!.on('click', () => {
+        speedIndex = (speedIndex + 1) % SPEEDS.length;
+        speedLabel.element!.text = `x${SPEEDS[speedIndex]}`;
+    });
 
     // Firing slots and lanes are independent in the core — a fixed pool of slots fed by however
     // many lanes the level defines — so they're laid out as two separate rows. Both live in one
@@ -162,7 +115,7 @@ export async function createHud(
         height: BOARD_HEIGHT
     });
     board.setLocalPosition(0, BOARD_BOTTOM_MARGIN, 0);
-    screen.addChild(board);
+    gameplayUi.addChild(board);
 
     const slotEls: Socket[] = [];
     const laneEls: LaneEls[] = [];
@@ -276,12 +229,8 @@ export async function createHud(
                         const slot = onActivate(l);
                         if (slot === null || !filled) return; // no free slot / lane already firing
                         flying.add(slot);
-                        flyToken(
-                            socket.el,
-                            slotEls[slot]!.el,
-                            socket.fill.element!.color.clone(),
-                            ammoText,
-                            () => flying.delete(slot)
+                        flyToken(socket.el, slotEls[slot]!.el, socket.fill.element!.color.clone(), ammoText, () =>
+                            flying.delete(slot)
                         );
                     });
                 }
@@ -307,6 +256,10 @@ export async function createHud(
         tweens.update();
         ensureLayout(state.columns.length, state.slots.length);
 
+        gameplayUi.enabled = state.status === 'playing';
+        endUi.win.enabled = state.status === 'won';
+        endUi.lose.enabled = state.status === 'lost';
+
         state.slots.forEach((hive, i) => {
             // Slot sockets always show, empty or not — only the queue stacks hide when empty.
             const shown = flying.has(i) ? null : hive;
@@ -329,25 +282,29 @@ export async function createHud(
         });
     }
 
-    function setStatus(text: string): void {
-        status.element!.text = text;
-    }
-
     function getSlotScreenPos(slot: number): { x: number; y: number } | undefined {
         const els = slotEls[slot];
         return els ? elementCenter(els.el) : undefined;
     }
 
+    function covers(el: Entity, x: number, y: number): boolean {
+        const c = el.element!.canvasCorners;
+        const minX = Math.min(c[0]!.x, c[1]!.x, c[2]!.x, c[3]!.x);
+        const maxX = Math.max(c[0]!.x, c[1]!.x, c[2]!.x, c[3]!.x);
+        const minY = Math.min(c[0]!.y, c[1]!.y, c[2]!.y, c[3]!.y);
+        const maxY = Math.max(c[0]!.y, c[1]!.y, c[2]!.y, c[3]!.y);
+        return x >= minX && x <= maxX && y >= minY && y <= maxY;
+    }
+
     function hitsButton(x: number, y: number): boolean {
+        // Once an end-of-round overlay is up the gameplay UI is gone, so nothing here can be hit
+        // and a drag anywhere should still rotate the sculpture.
+        if (!gameplayUi.enabled) return false;
+        if (covers(speedButton, x, y)) return true;
         return laneEls.some(({ queueSlots }) => {
             const front = queueSlots[0];
             if (!front?.button?.active) return false;
-            const c = front.el.element!.canvasCorners;
-            const minX = Math.min(c[0]!.x, c[1]!.x, c[2]!.x, c[3]!.x);
-            const maxX = Math.max(c[0]!.x, c[1]!.x, c[2]!.x, c[3]!.x);
-            const minY = Math.min(c[0]!.y, c[1]!.y, c[2]!.y, c[3]!.y);
-            const maxY = Math.max(c[0]!.y, c[1]!.y, c[2]!.y, c[3]!.y);
-            return x >= minX && x <= maxX && y >= minY && y <= maxY;
+            return covers(front.el, x, y);
         });
     }
 
@@ -355,5 +312,11 @@ export async function createHud(
         screen.destroy();
     }
 
-    return { refresh, setStatus, getSlotScreenPos, hitsButton, destroy };
+    return {
+        refresh,
+        getSlotScreenPos,
+        hitsButton,
+        getSpeed: () => SPEEDS[speedIndex]!,
+        destroy
+    };
 }

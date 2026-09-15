@@ -1,5 +1,5 @@
 import type { LevelDef, V3 } from 'core';
-import { Asset, Entity, MeshInstance } from 'playcanvas';
+import { Asset, Entity, MeshInstance, Vec3 } from 'playcanvas';
 import type { AppBase, Mesh } from 'playcanvas';
 
 import { materialFor } from './colors.ts';
@@ -14,6 +14,15 @@ export type Sculpture = {
     /** Shared cube mesh, exposed so other effects (e.g. a bee carrying one off) can reuse it
      *  instead of loading the GLB a second time. */
     mesh: Mesh;
+    /** Midpoint of the populated cells, subtracted from every grid coordinate to get a local one.
+     *  Exposed so core's grid-space flight paths can be placed in this hierarchy. */
+    center: V3;
+}
+
+/** Grid coordinate -> position inside `root`. Local, not world: `root` rotates under the drag
+ *  rig, so anything following a path has to be re-transformed each frame rather than baked once. */
+export function gridToLocal(sculpture: Sculpture, p: V3, out = new Vec3()): Vec3 {
+    return out.set(p.x - sculpture.center.x, p.y - sculpture.center.y, p.z - sculpture.center.z);
 }
 
 const CUBE_MODEL_URL = '/models/bee-cube-2.glb';
@@ -120,7 +129,7 @@ export async function buildSculpture(app: AppBase, level: LevelDef): Promise<Scu
     }
 
     const radius = Math.hypot(maxX - minX, maxY - minY, maxZ - minZ) / 2;
-    return { root, cubes, radius, batchGroupOf, mesh };
+    return { root, cubes, radius, batchGroupOf, mesh, center: { x: cx, y: cy, z: cz } };
 }
 
 export function destroyCube(app: AppBase, sculpture: Sculpture, cell: V3): void {
