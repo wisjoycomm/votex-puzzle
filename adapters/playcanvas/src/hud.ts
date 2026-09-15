@@ -1,10 +1,16 @@
+import { Easing, Group, Tween } from '@tweenjs/tween.js';
 import type { GameState } from 'core';
 
 import { hexFor } from './colors.ts';
 
+const FLY_MS = 220;
+
 export type Hud = {
     refresh(state: GameState, slotForLane: (lane: number) => number | undefined): void;
     setStatus(text: string): void;
+    /** Screen-space center of a lane's fix slot (the active/firing socket), for effects that
+     *  should originate from where a shot visually comes from. */
+    getFixSlotScreenPos(lane: number): { x: number; y: number } | undefined;
     destroy(): void;
 }
 
@@ -31,6 +37,33 @@ export function createHud(container: HTMLElement, onActivate: (lane: number) => 
     container.appendChild(lanesEl);
 
     const laneEls: LaneEls[] = [];
+    const tweens = new Group();
+
+    // Sockets never move — refresh() only repaints a fill in place. To sell "the chosen hive
+    // flies up into the fix slot", animate a throwaway clone over the real DOM instead of the
+    // (stationary) elements themselves.
+    function flyToken(from: HTMLElement, to: HTMLElement, background: string, text: string): void {
+        const fromRect = from.getBoundingClientRect();
+        const toRect = to.getBoundingClientRect();
+
+        const clone = document.createElement('div');
+        clone.className = 'hud-hive__fill hud-hive__fill--flying';
+        clone.style.left = `${fromRect.left}px`;
+        clone.style.top = `${fromRect.top}px`;
+        clone.style.width = `${fromRect.width}px`;
+        clone.style.height = `${fromRect.height}px`;
+        clone.style.background = background;
+        clone.textContent = text;
+        document.body.appendChild(clone);
+
+        const pos = { x: 0, y: 0 };
+        new Tween(pos, tweens)
+            .to({ x: toRect.left - fromRect.left, y: toRect.top - fromRect.top }, FLY_MS)
+            .easing(Easing.Quadratic.Out)
+            .onUpdate(() => (clone.style.transform = `translate(${pos.x}px, ${pos.y}px)`))
+            .onComplete(() => clone.remove())
+            .start();
+    }
 
     // Each hive is a fixed Slot.png socket (always visible, empty or not) with a colored fill
     // dot layered on top showing the hive's color/ammo — the socket art itself never changes.
@@ -63,7 +96,15 @@ export function createHud(container: HTMLElement, onActivate: (lane: number) => 
                 el.className = 'hud-hive hud-hive--queued';
                 el.appendChild(fill);
                 if (q === 0) {
-                    el.addEventListener('click', () => onActivate(i));
+                    el.addEventListener('click', () => {
+                        const background = fill.style.background;
+                        if (background) {
+                            flyToken(el, active, background, fill.textContent ?? '');
+                            queueEl.classList.add('hud-queue--shift');
+                            requestAnimationFrame(() => queueEl.classList.remove('hud-queue--shift'));
+                        }
+                        onActivate(i);
+                    });
                 } else {
                     el.classList.add('hud-hive--preview');
                 }
@@ -71,7 +112,10 @@ export function createHud(container: HTMLElement, onActivate: (lane: number) => 
                 queueSlots.push({ el, fill });
             }
 
-            lane.append(active, queueEl);
+            const divider = document.createElement('div');
+            divider.className = 'hud-divider';
+
+            lane.append(active, divider, queueEl);
             lanesEl.appendChild(lane);
             laneEls.push({ active, activeFill, queueSlots });
         }
@@ -84,6 +128,7 @@ export function createHud(container: HTMLElement, onActivate: (lane: number) => 
     }
 
     function refresh(state: GameState, slotForLane: (lane: number) => number | undefined): void {
+        tweens.update();
         ensureLanes(state.columns.length);
         state.columns.forEach((queue, laneIndex) => {
             const els = laneEls[laneIndex]!;
@@ -103,9 +148,16 @@ export function createHud(container: HTMLElement, onActivate: (lane: number) => 
         status.textContent = text;
     }
 
+    function getFixSlotScreenPos(lane: number): { x: number; y: number } | undefined {
+        const els = laneEls[lane];
+        if (!els) return undefined;
+        const rect = els.active.getBoundingClientRect();
+        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    }
+
     function destroy(): void {
         container.innerHTML = '';
     }
 
-    return { refresh, setStatus, destroy };
+    return { refresh, setStatus, getFixSlotScreenPos, destroy };
 }

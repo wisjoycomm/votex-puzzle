@@ -5,7 +5,7 @@ import type { Entity } from 'playcanvas';
 const DRAG_SPEED = 0.3; // degrees per pixel
 const WHEEL_SPEED = 0.3; // degrees per wheel-delta unit
 const PITCH_LIMIT = 60;
-const AUTO_ROTATE_SPEED = 6; // degrees per second, while not being dragged
+const AUTO_ROTATE_SPEED = 3; // degrees per second, while not being dragged
 const SMOOTHING = 10; // exponential decay rate
 
 export type CameraRig = {
@@ -65,7 +65,7 @@ export function createCameraRig(canvas: HTMLCanvasElement, root: Entity, camera:
     const qOrbit = new Quat();
 
     function update(dt: number): void {
-        if (!dragging) targetYaw += AUTO_ROTATE_SPEED * dt;
+        if (!dragging) targetYaw -= AUTO_ROTATE_SPEED * dt;
 
         const t = 1 - Math.exp(-SMOOTHING * dt); // framerate-independent easing
         yaw = math.lerpAngle(yaw, targetYaw, t);

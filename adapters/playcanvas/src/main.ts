@@ -16,9 +16,10 @@ import {
     createGraphicsDevice
 } from 'playcanvas';
 
+import { createBeeSwarm } from './bee.ts';
 import { createCameraRig } from './camera-rig.ts';
 import { createHud } from './hud.ts';
-import { buildSculpture, destroyCube } from './sculpture.ts';
+import { buildSculpture, cellKey, destroyCube } from './sculpture.ts';
 import './style.css';
 
 const canvas = document.getElementById('application-canvas') as HTMLCanvasElement;
@@ -53,7 +54,7 @@ light.addComponent('light', { type: 'directional', intensity: 1 });
 light.setEulerAngles(90, 0, 0);
 app.root.addChild(light);
 
-const rawLevel: BoxyBlastLevel = await fetch('/levels/teddy.json').then((res) => res.json());
+const rawLevel: BoxyBlastLevel = await fetch('/levels/easy.json').then((res) => res.json());
 const level = parseBoxyBlastLevel(rawLevel);
 
 const sculpture = await buildSculpture(app, level);
@@ -66,6 +67,7 @@ camera.setPosition(distance * 0.6, distance * 0.5, distance * 0.6);
 camera.lookAt(0, -sculpture.radius * 0.5, 0);
 
 const rig = createCameraRig(canvas, sculpture.root, camera);
+const bees = createBeeSwarm(app, camera, sculpture.mesh, distance);
 
 const core = new GameCore(level, Date.now());
 
@@ -82,7 +84,18 @@ const hud = createHud(hudEl, (lane) => {
     if (slot !== -1) laneToSlot.set(lane, slot);
 });
 
-core.on('cubeShot', (e) => destroyCube(app, sculpture, e.cell));
+core.on('cubeShot', (e) => {
+    const cubePos = sculpture.cubes.get(cellKey(e.cell))?.getPosition().clone();
+    destroyCube(app, sculpture, e.cell);
+    if (!cubePos) return;
+
+    let lane: number | undefined;
+    for (const [l, slot] of laneToSlot) {
+        if (slot === e.slot) lane = l;
+    }
+    const originScreen = lane !== undefined ? hud.getFixSlotScreenPos(lane) : undefined;
+    bees.spawn(cubePos, e.color, originScreen);
+});
 core.on('laneDepleted', (e) => {
     for (const [lane, slot] of laneToSlot) {
         if (slot === e.slot) laneToSlot.delete(lane);
@@ -93,6 +106,7 @@ core.on('gameLost', () => hud.setStatus('No moves left'));
 
 app.on('update', (dt: number) => {
     rig.update(dt);
+    bees.update(dt);
     core.setViewDirection(rig.getViewDir());
     const frame = core.update(dt);
     hud.refresh(frame.state, (lane) => laneToSlot.get(lane));

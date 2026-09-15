@@ -11,6 +11,9 @@ export type Sculpture = {
     radius: number;
     /** Batch group each cube belongs to (one per color), so destroying a cube can mark it dirty. */
     batchGroupOf: Map<string, number>;
+    /** Shared cube mesh, exposed so other effects (e.g. a bee carrying one off) can reuse it
+     *  instead of loading the GLB a second time. */
+    mesh: Mesh;
 }
 
 const CUBE_MODEL_URL = '/models/bee-cube-2.glb';
@@ -19,10 +22,13 @@ const CUBE_MODEL_URL = '/models/bee-cube-2.glb';
 // exact 1/105) so neighboring cubes overlap a hair instead of leaving a seam a cube behind it
 // shows through — an exact edge-to-edge fit is fragile against any rounding in the source mesh.
 const CUBE_MODEL_SIZE = 105;
-const CUBE_OVERSCALE = 1.15;
-const CUBE_SCALE = CUBE_OVERSCALE / CUBE_MODEL_SIZE;
+const CUBE_OVERSCALE = 1;
+export const CUBE_SCALE = CUBE_OVERSCALE / CUBE_MODEL_SIZE;
+// A placed cube's world-space side length (== CUBE_OVERSCALE, since CUBE_SCALE is defined to make
+// that so) — exposed so effects near a cube (e.g. a bee grabbing its edge) can size an offset.
+export const CUBE_WORLD_SIZE = CUBE_OVERSCALE;
 
-function cellKey(p: V3): string {
+export function cellKey(p: V3): string {
     return `${p.x},${p.y},${p.z}`;
 }
 
@@ -114,7 +120,7 @@ export async function buildSculpture(app: AppBase, level: LevelDef): Promise<Scu
     }
 
     const radius = Math.hypot(maxX - minX, maxY - minY, maxZ - minZ) / 2;
-    return { root, cubes, radius, batchGroupOf };
+    return { root, cubes, radius, batchGroupOf, mesh };
 }
 
 export function destroyCube(app: AppBase, sculpture: Sculpture, cell: V3): void {
