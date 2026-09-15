@@ -8,6 +8,7 @@ import FONT_PNG_URL from './assets/fonts/courier.png?inline';
 import SLOT_TEXTURE_URL from './assets/sprites/Slot.webp?inline';
 import { hexFor } from './colors.ts';
 import { createEndUi } from './end-ui.ts';
+import { sfx } from './sfx.ts';
 import { elementCenter, loadAsset, makeFill, makeFullScreenGroup, makeImage, makeText } from './ui-elements.ts';
 
 const FLY_MS = 220;
@@ -108,6 +109,7 @@ export async function createHud(app: AppBase, onActivate: (lane: number) => numb
 
     speedButton.addComponent('button');
     speedButton.button!.on('click', () => {
+        sfx('click');
         speedIndex = (speedIndex + 1) % SPEEDS.length;
         speedLabel.element!.text = `x${SPEEDS[speedIndex]}`;
     });
@@ -281,6 +283,9 @@ export async function createHud(app: AppBase, onActivate: (lane: number) => numb
                     socket.el.addComponent('button');
                     button = socket.el.button!;
                     button.on('click', () => {
+                        // Before the early-return below: the player pressed it either way, and this
+                        // is also the gesture that unlocks audio on iOS.
+                        sfx('click');
                         const ammoText = socket.text.element!.text;
                         const filled = socket.fill.enabled;
                         const slot = onActivate(l);

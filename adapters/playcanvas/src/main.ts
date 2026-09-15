@@ -31,6 +31,7 @@ import { createBeeSwarm } from './bee.ts';
 import { createCameraRig } from './camera-rig.ts';
 import { createHud } from './hud.ts';
 import { buildSculpture, destroyCube, gridToLocal } from './sculpture.ts';
+import { sfx } from './sfx.ts';
 import './style.css';
 
 // Nothing is drawn until the ad container says it is showing us. No-op without an MRAID SDK.
@@ -117,7 +118,11 @@ const bees = createBeeSwarm(
     backdrop
 );
 
+core.on('hiveActivated', () => sfx('spawn'));
+
 core.on('cubeShot', (e) => {
+    sfx('shoot');
+
     // Local, not world: the sculpture keeps rotating during the flight, so a world position
     // captured now would be stale by the time the bee arrives.
     const cubeLocal = gridToLocal(sculpture, e.cell);
@@ -134,8 +139,11 @@ core.on('cubeShot', (e) => {
 
     bees.spawn(cubeLocal, e.color, hud.getSlotScreenPos(e.slot), path);
 });
-// No gameWon/gameLost handlers: the HUD switches between its gameplay, win and lose groups off
-// frame.state.status in refresh(), so there's no second copy of "is the round over" to drift.
+// The HUD still switches between its gameplay, win and lose groups off frame.state.status in
+// refresh() — these handlers own no state, they just need the one edge the polled status can't
+// give them: the single frame the round ended on.
+core.on('gameWon', () => sfx('win'));
+core.on('gameLost', () => sfx('lose'));
 
 let lastWidth = 0;
 let lastHeight = 0;

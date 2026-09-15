@@ -2,6 +2,7 @@ import { Color, ELEMENTTYPE_IMAGE, Entity } from 'playcanvas';
 import type { Asset } from 'playcanvas';
 
 import { openStore } from './cta.ts';
+import { sfx } from './sfx.ts';
 import { makeFullScreenGroup, makeText } from './ui-elements.ts';
 
 // The win and lose screens. Deliberately a separate module from the gameplay HUD: these appear
@@ -65,7 +66,10 @@ function makeCta(fontAsset: Asset): Entity {
     button.addChild(label);
 
     button.addComponent('button');
-    button.button!.on('click', openStore);
+    button.button!.on('click', () => {
+        sfx('click');
+        openStore();
+    });
     return button;
 }
 

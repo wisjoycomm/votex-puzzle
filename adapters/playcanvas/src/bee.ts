@@ -5,6 +5,7 @@ import type { AppBase, GraphNode, Mesh } from 'playcanvas';
 import BEE_MODEL_URL from './assets/models/Bee_2.glb?inline';
 import { materialFor } from './colors.ts';
 import { CUBE_SCALE, CUBE_WORLD_SIZE } from './sculpture.ts';
+import { sfx } from './sfx.ts';
 
 
 // inspect-glb: Bee_2.glb measures 1.2405 x 0.7109 x 1.2414 units and a cube is exactly 1 unit,
@@ -604,7 +605,11 @@ export function createBeeSwarm(
                     exit,
                     ENTER_MS,
                     Easing.Linear.None,
-                    () => release(inst),
+                    () => {
+                        // Leg 3 ending IS the cube going through the hole in the hive.
+                        sfx('hive');
+                        release(inst);
+                    },
                     bee,
                     straight(lineUp, exit)
                 );
