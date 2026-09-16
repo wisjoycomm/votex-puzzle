@@ -116,7 +116,7 @@ export class GameView extends Component {
         this.core.on("gameLost", () => console.log("[game-view] LOST"));
 
         console.log(
-            `[game-view] ${this.sculpture.cubes.size} cubes, radius ${this.sculpture.radius.toFixed(2)}, ` +
+            `[game-view] ${this.sculpture.cubeCount} cubes, radius ${this.sculpture.radius.toFixed(2)}, ` +
                 `${level.lanes.length} lanes — tap a hive to fire`,
         );
     }

@@ -1,7 +1,18 @@
-import { EffectAsset, Mesh, MeshRenderer, Node, Vec3 } from "cc";
+import { EffectAsset, Mesh, MeshRenderer, Node, tween, Vec3 } from "cc";
 import type { LevelDef, V3 } from "core";
 
 import { materialFor } from "./colors";
+
+// Cubes fall in from this many grid steps above their cell. Raise for a bigger drop.
+const SPAWN_DROP = 1.2;
+// Seconds one cube takes to land.
+const SPAWN_FALL = 0.3;
+// Seconds between one row landing and the next. Raise for a slower cascade; 0 = all at once.
+const SPAWN_ROW_DELAY = 0.05;
+// Squash on impact, as a fraction of cube scale. 0 disables the pop.
+const POP = 0.1;
+// Seconds for the squash, and again for the recovery.
+const POP_TIME = 0.04;
 
 export type Sculpture = {
     root: Node;
@@ -15,6 +26,11 @@ export type Sculpture = {
     center: V3;
     /** Uniform scale applied to each cube so it occupies exactly one grid step. */
     cubeScale: number;
+    /** Total populated cells. `cubes` only holds the rows spawned so far, so it is not this. */
+    cubeCount: number;
+    /** Cells shot before their row spawned. The row builder skips these — without it the cube
+     *  would appear after its own destruction and nothing could ever remove it. */
+    killed: Set<string>;
 };
 
 export function cellKey(p: V3): string {
@@ -100,47 +116,91 @@ export function buildSculpture(
     parent.addChild(root);
 
     const cubeScale = scaleToUnitCube(mesh);
+    // Shared by every spawn tween: `to()` only reads these, it never writes back into them.
+    const landed = new Vec3(cubeScale, cubeScale, cubeScale);
+    const squash = new Vec3(
+        cubeScale * (1 + POP),
+        cubeScale * (1 - POP),
+        cubeScale * (1 + POP),
+    );
     const cubes = new Map<string, Node>();
 
-    for (const { pos, color } of populated) {
-        const cube = new Node(`cube_${pos.x}_${pos.y}_${pos.z}`);
-        cube.setPosition(pos.x - cx, pos.y - cy, pos.z - cz);
-        cube.setScale(cubeScale, cubeScale, cubeScale);
-        root.addChild(cube);
-
-        const renderer = cube.addComponent(MeshRenderer);
-        renderer.mesh = mesh;
-        // setMaterial, NOT setMaterialInstance: the latter wraps the material in a per-renderer
-        // MaterialInstance, which would give 4000 distinct materials and defeat instancing
-        // completely. Instancing batches models that share one material, so they must share one.
-        //
-        // No dynamic-batching bookkeeping to keep in step either — unlike PlayCanvas' batch groups,
-        // an instanced batch re-reads each member's transform every frame, so `root` can spin, and
-        // destroying a cube node drops it from the batch on its own.
-        renderer.setMaterial(materialFor(color, effect), 0);
-        // The toon ramp carries the shading; 4000 shadow casters buy nothing and would drag the
-        // effect's shadow-caster pass in on top of the base pass.
-        renderer.shadowCastingMode = MeshRenderer.ShadowCastingMode.OFF;
-        renderer.receiveShadow = MeshRenderer.ShadowReceivingMode.OFF;
-
-        cubes.set(cellKey(pos), cube);
+    // Row by row, one grid layer per SPAWN_ROW_DELAY. The nodes are built when their row's turn
+    // comes rather than all up front: 4000 nodes plus 4000 tweens in a single frame is a visible
+    // hitch, and spread over the rows it is a slice of that per frame.
+    const rows: { pos: V3; color: number }[][] = [];
+    for (const cell of populated) {
+        (rows[cell.pos.y - minY] ??= []).push(cell);
     }
 
-    const radius = Math.hypot(maxX - minX, maxY - minY, maxZ - minZ) / 2;
-    return {
+    const sculpture: Sculpture = {
         root,
         cubes,
-        radius,
+        radius: Math.hypot(maxX - minX, maxY - minY, maxZ - minZ) / 2,
         mesh,
         center: { x: cx, y: cy, z: cz },
         cubeScale,
+        cubeCount: populated.length,
+        killed: new Set(),
     };
+
+    function spawnRow(row: { pos: V3; color: number }[]): void {
+        for (const { pos, color } of row) {
+            const key = cellKey(pos);
+            if (sculpture.killed.has(key)) continue;
+
+            const cube = new Node(`cube_${pos.x}_${pos.y}_${pos.z}`);
+            const base = new Vec3(pos.x - cx, pos.y - cy, pos.z - cz);
+            cube.setPosition(base.x, base.y + SPAWN_DROP, base.z);
+            cube.setScale(cubeScale, cubeScale, cubeScale);
+            root.addChild(cube);
+
+            // Fall in, squash on impact, recover.
+            tween(cube)
+                .to(SPAWN_FALL, { position: base }, { easing: "quadOut" })
+                .to(POP_TIME, { scale: squash })
+                .to(POP_TIME, { scale: landed }, { easing: "quadOut" })
+                .start();
+
+            const renderer = cube.addComponent(MeshRenderer);
+            renderer.mesh = mesh;
+            // setMaterial, NOT setMaterialInstance: the latter wraps the material in a per-renderer
+            // MaterialInstance, which would give 4000 distinct materials and defeat instancing
+            // completely. Instancing batches models that share one material, so they must share one.
+            //
+            // No dynamic-batching bookkeeping to keep in step either — unlike PlayCanvas' batch
+            // groups, an instanced batch re-reads each member's transform every frame, so `root`
+            // can spin, and destroying a cube node drops it from the batch on its own.
+            renderer.setSharedMaterial(materialFor(color, effect), 0);
+            // The toon ramp carries the shading; 4000 shadow casters buy nothing and would drag the
+            // effect's shadow-caster pass in on top of the base pass.
+            renderer.shadowCastingMode = MeshRenderer.ShadowCastingMode.OFF;
+            renderer.receiveShadow = MeshRenderer.ShadowReceivingMode.OFF;
+
+            cubes.set(key, cube);
+        }
+    }
+
+    // One tween on `root` drives the whole schedule — 1 action rather than one per row. It only
+    // calls back; the rig owns root's rotation and nothing here touches it.
+    let schedule = tween(root);
+    rows.forEach((row, i) => {
+        if (i > 0) schedule = schedule.delay(SPAWN_ROW_DELAY);
+        schedule = schedule.call(() => spawnRow(row));
+    });
+    schedule.start();
+
+    return sculpture;
 }
 
 export function destroyCube(sculpture: Sculpture, cell: V3): void {
     const key = cellKey(cell);
     const cube = sculpture.cubes.get(key);
-    if (!cube) return;
+    if (!cube) {
+        // Shot before its row spawned — remember, so the row builder never creates it.
+        sculpture.killed.add(key);
+        return;
+    }
     cube.destroy();
     sculpture.cubes.delete(key);
 }
