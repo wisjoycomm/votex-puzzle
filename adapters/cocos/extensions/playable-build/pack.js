@@ -11,8 +11,9 @@
 // existing. `npm run pack -w cocos-adapter` after a Creator build always uses the code on disk.
 
 const { execFileSync } = require('child_process');
-const { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } = require('fs');
+const { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } = require('fs');
 const { basename, join } = require('path');
+const { zipDir } = require('../../../../scripts/zip-dir.cjs');
 
 // Our network name -> the adapter-core channel that produces it. This way round, not the reverse,
 // because two networks can share one channel: `mraid` and `applovin` are the same MRAID file and
@@ -48,24 +49,11 @@ const ORIENTATION = 'portrait';
 // (`cocos-adapter`), not the output folder (`web-mobile`) - the file gets sent to a network, so it
 // should say what the game is, not which platform target built it. The stamp keeps every send-off
 // distinct. verify-playable.mjs reads the network back out of the file name.
-const stamp = () => new Date().toLocaleString('sv-SE').replace(/[-:]/g, '').replace(' ', '-').slice(0, 13);
+const stamp = () => new Date().toLocaleString('sv-SE').replace(/[-:]/g, '').replace(' ', '_').slice(0, 13);
 
-// The OS's own zip, so this stays dependency-free. Entry names are passed explicitly rather than
-// `.` or a wildcard: `tar -C dir .` prefixes every entry with `./`, and PowerShell's
-// Compress-Archive nests them under the folder name AND writes backslash separators, which is
-// outside the zip spec. Every zip-taking network wants index.html at the archive root.
-// ponytail: two branches because Creator ships on Windows and macOS; add another if that changes.
-function zipDir(dir, dest) {
-    if (existsSync(dest)) unlinkSync(dest);
-    const entries = readdirSync(dir);
-    if (process.platform === 'win32') {
-        // The full path, not `tar`: git's GNU tar is often first on PATH and reads `D:\...` as a
-        // remote host.
-        execFileSync('C:/Windows/System32/tar.exe', ['-a', '-c', '-f', dest, '-C', dir, ...entries]);
-    } else {
-        execFileSync('zip', ['-qr', dest, ...entries], { cwd: dir });
-    }
-}
+// Mintegral §13 allows only [A-Za-z0-9_] in the delivered file name. Applied to every network
+// rather than just that one: underscores are legal everywhere, so one rule beats a special case.
+const safeName = (s) => s.replace(/[^A-Za-z0-9_]/g, '_');
 
 /**
  * @param {object} [opts]
@@ -108,7 +96,7 @@ async function pack(opts) {
     for (const [network, channel] of Object.entries(CHANNEL_OF)) {
         const asFile = join(buildDir, `${channel}.html`);
         const asDir = join(buildDir, channel);
-        const base = `${buildName}-${network}-${when}`;
+        const base = safeName(`${buildName}_${network}_${when}`);
         // Stamp the target network so playable-ads-core's buildNetwork() can report it. Done
         // here rather than via the adapter's injectOptions, which doesn't reach every channel.
         const withStamp = (html) =>

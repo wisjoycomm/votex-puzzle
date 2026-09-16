@@ -1,6 +1,6 @@
 import { GameCore, parseBoxyBlastLevel } from 'core';
 import type { BoxyBlastLevel } from 'core';
-import { gameEnded, isVisible, whenReady } from 'playable-ads-core';
+import { gameEnded, gameReady, isVisible, onAdClose, onAdStart, whenReady } from 'playable-ads-core';
 import {
     AppBase,
     AppOptions,
@@ -31,7 +31,7 @@ import { createBeeSwarm } from './bee.ts';
 import { createCameraRig } from './camera-rig.ts';
 import { createHud } from './hud.ts';
 import { buildSculpture, destroyCube, gridToLocal } from './sculpture.ts';
-import { sfx, startMusic, updateMusic } from './sfx.ts';
+import { allowMusic, sfx, startMusic, stopMusic, updateMusic } from './sfx.ts';
 import './style.css';
 
 // Nothing is drawn until the ad container says it is showing us. No-op without an MRAID SDK.
@@ -154,8 +154,8 @@ core.on('cubeShot', (e) => {
 // The HUD still switches between its gameplay, win and lose groups off frame.state.status in
 // refresh() — these handlers own no state, they just need the one edge the polled status can't
 // give them: the single frame the round ended on.
-// gameEnded() tells Vungle and Mintegral the run is over - required alongside the store click,
-// ignored everywhere else. On both outcomes: the network wants "ended", not "won".
+// gameEnded() tells Mintegral the run is over - required alongside the store click, ignored
+// everywhere else. On both outcomes: the network wants "ended", not "won".
 core.on('gameWon', () => {
     sfx('win');
     gameEnded();
@@ -170,6 +170,13 @@ let lastHeight = 0;
 
 // Armed now, audible from the first tap — browsers won't start audio before a gesture.
 startMusic();
+
+// Mintegral's container drives the ad's start and end, and expects the creative to hand it the
+// backing-track controls (§5/§7). Every other network ignores these; the track still runs off the
+// first tap. gameReady() is the opposite direction — ours to call, once everything is loaded.
+onAdStart(allowMusic);
+onAdClose(stopMusic);
+gameReady();
 
 app.on('update', (dt: number) => {
     // Poll for a resized ad slot; the camera reframes because distance depends on aspect.

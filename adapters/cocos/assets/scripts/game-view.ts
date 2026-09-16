@@ -11,14 +11,14 @@ import {
 } from "cc";
 import { GameCore, parseBoxyBlastLevel } from "core";
 import type { BoxyBlastLevel, LevelDef } from "core";
-import { gameEnded, isVisible, whenReady } from "playable-ads-core";
+import { gameEnded, gameReady, isVisible, onAdClose, onAdStart, whenReady } from "playable-ads-core";
 
 import { createBeeSwarm } from "./bee";
 import type { BeeSwarm } from "./bee";
 import { createCameraRig } from "./camera-rig";
 import type { CameraRig } from "./camera-rig";
 import { HudView } from "./hud-view";
-import { playMusic, playSfx } from "./audio-manager";
+import { allowMusic, playMusic, playSfx, stopMusic } from "./audio-manager";
 import { buildSculpture, destroyCube } from "./sculpture";
 import type { Sculpture } from "./sculpture";
 
@@ -137,6 +137,14 @@ export class GameView extends Component {
         // Queued, not started: the first tap unlocks web audio and the manager takes it from there.
         playMusic("backtrack");
 
+        // Mintegral's container drives the ad's start and end and expects the creative to hand it
+        // the backing-track controls (§5/§7 of its spec) - those two are ours to DEFINE, theirs to
+        // call. gameReady() is the other direction: ours to call, once everything has loaded.
+        // Every other network ignores all three.
+        onAdStart(() => allowMusic());
+        onAdClose(() => stopMusic());
+        gameReady();
+
         this.core.on("hiveActivated", () => playSfx("spawn"));
 
         this.core.on("cubeShot", (e) => {
@@ -148,8 +156,8 @@ export class GameView extends Component {
         });
         // The HUD polls frame.state.status for its win/lose groups — these two handlers exist
         // only for the single frame the round ended on, which a polled status can't give them.
-        // gameEnded() tells Vungle and Mintegral the run is over - required alongside the store
-        // click, ignored everywhere else. On both outcomes: the network wants "ended", not "won".
+        // gameEnded() tells Mintegral the run is over - required alongside the store click,
+        // ignored everywhere else. On both outcomes: the network wants "ended", not "won".
         this.core.on("gameWon", () => {
             playSfx("win");
             gameEnded();

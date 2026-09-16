@@ -1,8 +1,11 @@
-import { renameSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { defineConfig } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
+
+import { zipDir } from '../../scripts/zip-dir.cjs';
 
 import pkg from './package.json' with { type: 'json' };
 
@@ -27,9 +30,17 @@ const NETWORK_HEAD: Record<string, string> = {
 // hook writes: the file is what gets sent to a network, so its name has to say which game, which
 // network and which build without opening it. Other modes (production) keep dist/<mode>/index.html.
 // ponytail: this one-liner is duplicated in the Cocos hook, which is CJS and can't import it.
-const buildStamp = () => new Date().toLocaleString('sv-SE').replace(/[-:]/g, '').replace(' ', '-').slice(0, 13);
+const buildStamp = () => new Date().toLocaleString('sv-SE').replace(/[-:]/g, '').replace(' ', '_').slice(0, 13);
+
+// Mintegral §13 allows only [A-Za-z0-9_] in the delivered file name. Applied to every network
+// rather than just that one: underscores are legal everywhere, so one rule beats a special case.
+const safeName = (s: string) => s.replace(/[^A-Za-z0-9_]/g, '_');
 
 const NETWORKS = ['meta', 'google', 'mraid', 'applovin', 'unity', 'mintegral'];
+
+// Networks that take a ZIP; the rest ship as one loose html. Same rule the Cocos adapter applies,
+// so a given network gets the same package shape whichever engine built it.
+const ZIPPED = new Set(['meta', 'google', 'mintegral']);
 
 export default defineConfig(({ mode }) => ({
     // .glb isn't a built-in Vite asset type, so `?inline` would hit the filesystem loader.
@@ -53,10 +64,39 @@ export default defineConfig(({ mode }) => ({
             // native proxy that rejects re-keying an emitted asset.
             closeBundle() {
                 if (!NETWORKS.includes(mode)) return;
-                const name = `${pkg.name}-${mode}-${buildStamp()}.html`;
                 const dist = join(import.meta.dirname, 'dist');
-                renameSync(join(dist, 'index.html'), join(dist, name));
-                console.log(`dist/${name}`);
+                const base = safeName(`${pkg.name}_${mode}_${buildStamp()}`);
+
+                if (!ZIPPED.has(mode)) {
+                    renameSync(join(dist, 'index.html'), join(dist, `${base}.html`));
+                    console.log(`dist/${base}.html`);
+                    return;
+                }
+
+                // Staged as index.html, which is the name every zip-taking network expects at the
+                // archive root. vite already emitted it under that name, so this is a move. The
+                // staging folder is named after the network because that is what
+                // verify-playable.mjs reads the network from when the file is called index.html -
+                // without this the zipped builds would drop out of checking entirely, since
+                // `npm run verify` only globs dist/*.html.
+                const stage = join(dist, '.pack', mode);
+                rmSync(join(dist, '.pack'), { recursive: true, force: true });
+                mkdirSync(stage, { recursive: true });
+                const staged = join(stage, 'index.html');
+                renameSync(join(dist, 'index.html'), staged);
+
+                try {
+                    const verifier = join(import.meta.dirname, '..', '..', 'scripts', 'verify-playable.mjs');
+                    console.log(execFileSync(process.execPath, [verifier, staged], { encoding: 'utf8' }).trim());
+                } catch (err) {
+                    // Never fail a finished build over verification; the report is on stdout.
+                    const e = err as { stdout?: string; message?: string };
+                    console.warn(`verify: ${String(e.stdout || e.message).trim()}`);
+                }
+
+                zipDir(stage, join(dist, `${base}.zip`));
+                rmSync(join(dist, '.pack'), { recursive: true, force: true });
+                console.log(`dist/${base}.zip`);
             }
         }
     ],

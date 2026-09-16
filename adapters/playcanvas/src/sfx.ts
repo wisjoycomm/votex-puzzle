@@ -102,3 +102,16 @@ export function updateMusic(): void {
         music.pause();
     }
 }
+
+/** The container says the ad has started (Mintegral §5). Treated as permission to play: if audio
+ *  is still locked the play() below rejects harmlessly and the next poll retries. */
+export function allowMusic(): void {
+    gestured = true;
+}
+
+/** The container says the ad is over (Mintegral §7) — "turn off this background music". */
+export function stopMusic(): void {
+    if (!music) return;
+    musicOn = false;
+    music.pause();
+}

@@ -129,3 +129,14 @@ export function playMusic(name: string): void {
     if (!clip) return warnMissing(name);
     active!.setMusic(clip);
 }
+
+/** The container says the ad has started (Mintegral §5). Treated as permission to play: update()
+ *  starts the track on its next tick if the ad is on screen. */
+export function allowMusic(): void {
+    gestured = true;
+}
+
+/** The container says the ad is over (Mintegral §7) — "turn off this background music". */
+export function stopMusic(): void {
+    gestured = false;
+}

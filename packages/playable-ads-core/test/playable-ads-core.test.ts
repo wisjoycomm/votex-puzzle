@@ -16,8 +16,19 @@ Object.defineProperty(globalThis, "document", { value: doc, configurable: true, 
 
 setUserAgent("Mozilla/5.0 (Linux; Android 13)");
 
-const { buildNetwork, detectNetwork, gameEnded, isIos, isVisible, openStore, pickStoreUrl, resetGameEnded } =
-    await import("../src/index.ts");
+const {
+    buildNetwork,
+    detectNetwork,
+    gameEnded,
+    gameReady,
+    isIos,
+    isVisible,
+    onAdClose,
+    onAdStart,
+    openStore,
+    pickStoreUrl,
+    resetGameEnded
+} = await import("../src/index.ts");
 
 const URLS = { ios: "https://apps.apple.com/app/id1", android: "https://play.google.com/store/apps/details?id=a" };
 
@@ -206,5 +217,37 @@ test("openStore dispatches per network: the MRAID family opens, mintegral instal
     openStore(URLS);
     assert.equal(installs, 1);
 
+    delete g.__AD_NETWORK__;
+});
+
+test("Mintegral lifecycle: gameReady is ours to call, gameStart/gameClose are ours to define", () => {
+    const g = globalThis as Record<string, unknown>;
+    clearSdks();
+
+    // gameReady: we call the container's function, and only on Mintegral.
+    let readies = 0;
+    g.gameReady = () => readies++;
+    for (const net of ["meta", "google", "mraid", "applovin", "unity"]) {
+        g.__AD_NETWORK__ = net;
+        gameReady();
+    }
+    assert.equal(readies, 0);
+    g.__AD_NETWORK__ = "mintegral";
+    gameReady();
+    assert.equal(readies, 1);
+
+    // gameStart/gameClose: the container calls THEM, so registering must install the function.
+    let started = 0;
+    let closed = 0;
+    onAdStart(() => started++);
+    onAdClose(() => closed++);
+    (g.gameStart as () => void)();
+    (g.gameClose as () => void)();
+    assert.equal(started, 1);
+    assert.equal(closed, 1);
+
+    delete g.gameReady;
+    delete g.gameStart;
+    delete g.gameClose;
     delete g.__AD_NETWORK__;
 });

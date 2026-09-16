@@ -23,6 +23,9 @@ type Hooks = {
     mraid?: { open?: (url: string) => void };
     install?: () => void;
     gameEnd?: () => void;
+    gameReady?: () => void;
+    gameStart?: () => void;
+    gameClose?: () => void;
 };
 
 /** iPadOS 13+ reports a desktop Mac UA; touch points are what give it away. */
@@ -105,4 +108,29 @@ export function gameEnded(): void {
 /** Test seam: the once-only latch is module state, and each case needs a fresh one. */
 export function resetGameEnded(): void {
     ended = false;
+}
+
+/**
+ * Mintegral §4: call once every resource has finished loading. Ignored everywhere else.
+ *
+ * Direction matters and the name does not carry it — half of Mintegral's `game*` globals are ours
+ * to CALL, half are ours to DEFINE for its container to call. Get it backwards and nothing throws:
+ * the creative loads, the checklist can even go green, and the hook simply never runs.
+ */
+export function gameReady(): void {
+    if (detectNetwork() === "mintegral") (globalThis as unknown as Hooks).gameReady?.();
+}
+
+/**
+ * Mintegral §5: the container CALLS this, so we define it — "starting the countdown, starting the
+ * background music". Deliberately not named `gameStart`: Luna ships a `startGame` that looks like
+ * the same word transposed but gates boot instead, and confusing the two is the classic bug here.
+ */
+export function onAdStart(fn: () => void): void {
+    (globalThis as unknown as Hooks).gameStart = fn;
+}
+
+/** Mintegral §7: the container CALLS this at the end of the ad — "turn off this background music". */
+export function onAdClose(fn: () => void): void {
+    (globalThis as unknown as Hooks).gameClose = fn;
 }

@@ -90,16 +90,33 @@ Lưu ý khác:
 
 - `mraid`, `applovin`, `unity` thực chất cùng là MRAID, gọi hàm y hệt nhau; tách build riêng chỉ
   để dấu `__AD_NETWORK__` ghi đúng nơi đã gửi file.
-- **`meta`, `google`, `mintegral` xuất ra `.zip`**; ba cái còn lại là html rời. Meta bị siết ở bản
+- **`meta`, `google`, `mintegral` xuất ra `.zip`**; ba cái còn lại là html rời. Áp dụng cho **cả
+  hai adapter**, nên cùng một network thì cùng một dạng gói, không quan trọng engine nào build. Meta bị siết ở bản
   html đơn (2 MB so với 5 MB khi zip) và Google yêu cầu html đã zip; Mintegral thì channel của nó
   vốn xuất ra cả thư mục (`index.html` + `js/`). Hook Cocos nén bằng công cụ sẵn có của hệ điều
   hành, `index.html` luôn nằm ở gốc archive.
-- `npm run verify -w cocos-adapter` chỉ quét `dist/*.html`, nên các bản zip được kiểm ngay trong
-  hook lúc build (trước khi nén), không phải bằng lệnh này.
+- `npm run verify` chỉ quét `dist/*.html`, nên các bản zip được kiểm ngay lúc build (trước khi
+  nén), không phải bằng lệnh này.
+- `scripts/zip-dir.cjs` là phần nén dùng chung cho cả hai adapter; để CommonJS vì phía Cocos chạy
+  bằng Node 20 đi kèm Creator, không `require` được ESM.
 
 Tham khảo: 
 
 - https://docs.lunalabs.io/docs/playable/ad-networks/overview
+## Build PlayCanvas
+
+```bash
+npm run build:all -w playcanvas-adapter          # cả sáu network
+npm run build:meta -w playcanvas-adapter         # một network (google | mraid | applovin | unity | mintegral)
+npm run dev -w playcanvas-adapter                # dev server :5173, để chơi thử
+```
+
+Kết quả nằm ở `adapters/playcanvas/dist/`, đã kiểm sẵn — ba bản zip được kiểm ngay lúc build,
+trước khi nén. Không dính editor nên không bao giờ bị chạy code cũ.
+
+Sửa `packages/core` hay `packages/playable-ads-core` thì **phải build lại package đó trước**
+(`npm run build -w playable-ads-core`), vì adapter đọc từ `dist/` chứ không đọc source.
+
 ## Build Cocos
 
 Creator chỉ nạp phần main của extension **một lần lúc mở editor**, nên sửa pipeline xong mà editor
