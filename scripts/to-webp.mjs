@@ -1,10 +1,18 @@
 // Re-encode source PNGs as the WebP the bundle ships. Chrome does the encoding, so no image dep.
 //
-//   node scripts/to-webp.mjs [quality] [file.png...]     default q=0.85
+//   node scripts/to-webp.mjs <file-or-glob>... [--q 0.85]
+//   node scripts/to-webp.mjs "adapters/cocos/assets/sprites/*.png"
 //
-// Not for fonts/courier.png — MSDF glyph edges are distance values, lossy wrecks them.
+// Each .png is written back as .webp beside it, so both adapters use the same command with their
+// own paths. Quote the glob: this expands it itself, because PowerShell doesn't.
+//
+// Two things to keep out of it: MSDF glyph atlases (fonts/courier.png - the edges are distance
+// values, and lossy wrecks them), and `Dark BG 01.png`, whose 3px colour bands get smeared by
+// chroma subsampling - re-encode that one with `--q 1`.
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, globSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const CHROME = [
     'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -13,19 +21,26 @@ const CHROME = [
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 ].find((p) => existsSync(p));
 
-const DEFAULTS = [
-    'src/assets/sprites/Top Leaf.png',
-    'src/assets/sprites/Layer 02.png',
-    'src/assets/sprites/Layer 03.png',
-    'src/assets/sprites/Slot.png'
-];
-
 const args = process.argv.slice(2);
-const quality = Number(args[0]) ? Number(args.shift()) : 0.85;
-const files = args.length ? args : DEFAULTS;
+const qFlag = args.indexOf('--q');
+const quality = qFlag === -1 ? 0.85 : Number(args[qFlag + 1]);
+const patterns = args.filter((a, i) => !a.startsWith('--') && (qFlag === -1 || i !== qFlag + 1));
+const files = patterns.flatMap((p) => (existsSync(p) ? [p] : globSync(p)));
 
+if (!patterns.length) {
+    console.error('usage: node scripts/to-webp.mjs <file-or-glob>... [--q 0.85]');
+    process.exit(2);
+}
+if (!files.length) {
+    console.error(`nothing matched: ${patterns.join(', ')}`);
+    process.exit(1);
+}
+if (!(quality > 0 && quality <= 1)) {
+    console.error(`--q must be in (0, 1], got ${args[qFlag + 1]}`);
+    process.exit(2);
+}
 if (!CHROME) {
-    console.error('no Chrome or Edge found — add its path to CHROME in this script');
+    console.error('no Chrome or Edge found - add its path to CHROME in this script');
     process.exit(1);
 }
 
@@ -33,7 +48,7 @@ const port = 9333;
 const chrome = spawn(CHROME, [
     '--headless=new',
     `--remote-debugging-port=${port}`,
-    '--user-data-dir=' + process.cwd() + '/node_modules/.cache/to-webp-profile',
+    `--user-data-dir=${join(tmpdir(), 'to-webp-profile')}`,
     '--no-first-run',
     'about:blank'
 ]);
@@ -73,6 +88,7 @@ ws.addEventListener('message', (ev) => {
 await new Promise((r) => ws.addEventListener('open', r));
 await send('Runtime.enable');
 
+let failed = 0;
 for (const file of files) {
     const before = readFileSync(file);
     const r = await send('Runtime.evaluate', {
@@ -94,9 +110,10 @@ for (const file of files) {
     const b64 = r?.result?.value;
     if (typeof b64 !== 'string') {
         console.error(`FAILED ${file}: ${JSON.stringify(r)}`);
+        failed++;
         continue;
     }
-    const out = file.replace(/\.png$/, '.webp');
+    const out = file.replace(/\.png$/i, '.webp');
     const buf = Buffer.from(b64, 'base64');
     writeFileSync(out, buf);
     const pct = (100 - (buf.length / before.length) * 100).toFixed(0);
@@ -106,4 +123,4 @@ for (const file of files) {
 
 ws.close();
 chrome.kill();
-process.exit(0);
+process.exit(failed ? 1 : 0);

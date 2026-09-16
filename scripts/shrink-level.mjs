@@ -6,10 +6,9 @@
 // rewritten as `[x, y, z, color]` — same data, about a fifth of the bytes, and still a plain
 // BoxyBlastLevel, so parseBoxyBlastLevel reads it directly (it accepts either form).
 //
-// Output is .json, loaded through a @property(JsonAsset) Inspector slot on GameView — not
-// resources.load, which would need a `resources/` folder and an async callback for data the
-// scene already depends on. Dragging a different level asset into that slot swaps levels with
-// no code change, which is what makes testing against `easy` instead of `teddy` a one-second job.
+// Output stays plain .json so each adapter loads it its own way: PlayCanvas `import`s it into
+// the bundle, Cocos points a @property(JsonAsset) Inspector slot at it (dragging a different
+// level into that slot swaps levels with no code change).
 //
 // Health is dropped because it is 1 for every cube in both levels; a level that actually used
 // multi-hit cubes would need it back (and the game would need to implement them).

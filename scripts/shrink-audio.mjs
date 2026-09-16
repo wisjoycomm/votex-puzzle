@@ -1,20 +1,30 @@
 // Encode SFX masters to mono MP3 for the bundle.
 //
-//   node scripts/shrink-audio.mjs [kbps]     audios-src/*.wav -> src/assets/audios/*.mp3
+//   node scripts/shrink-audio.mjs <src-dir> <out-dir> [--kbps 96]
+//   node scripts/shrink-audio.mjs audios-src adapters/cocos/assets/audios
+//
+// Every *.wav in <src-dir> lands as *.mp3 in <out-dir>, so both adapters use the same command
+// with their own paths.
 //
 // The masters are 24-bit stereo 44.1 kHz, which is ~20x the bytes for sound a phone speaker plays
 // once. MP3 rather than Ogg: Safari/WKWebView is where a large share of playable impressions run,
 // and Ogg is not reliably decodable there.
 //
-// Sample rate is left at the source — at 44.1 kHz the bitrate does the work, and downsampling to
+// Sample rate is left at the source - at 44.1 kHz the bitrate does the work, and downsampling to
 // 22 kHz measurably dulled shoot.wav (-22% RMS) for a few kB.
 import lamejs from '@breezystack/lamejs';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 
-const SRC = 'audios-src';
-const OUT = 'src/assets/audios';
-const KBPS = Number(process.argv[2]) || 96;
+const args = process.argv.slice(2);
+const kFlag = args.indexOf('--kbps');
+const KBPS = kFlag === -1 ? 96 : Number(args[kFlag + 1]);
+const [SRC, OUT] = args.filter((a, i) => !a.startsWith('--') && (kFlag === -1 || i !== kFlag + 1));
+
+if (!SRC || !OUT) {
+    console.error('usage: node scripts/shrink-audio.mjs <src-dir> <out-dir> [--kbps 96]');
+    process.exit(2);
+}
 
 /** Walk RIFF chunks rather than assuming a 44-byte header — exporters insert LIST/fact chunks. */
 function parseWav(buf) {
@@ -77,7 +87,11 @@ function encodeMp3(samples, rate, kbps) {
 
 mkdirSync(OUT, { recursive: true });
 
-const files = readdirSync(SRC).filter((f) => f.endsWith('.wav'));
+const files = readdirSync(SRC).filter((f) => f.toLowerCase().endsWith('.wav'));
+if (!files.length) {
+    console.error(`no .wav in ${SRC}`);
+    process.exit(1);
+}
 let before = 0;
 let after = 0;
 
@@ -85,13 +99,13 @@ for (const file of files) {
     const src = readFileSync(join(SRC, file));
     const parsed = parseWav(src);
     const mp3 = encodeMp3(toMonoInt16(parsed), parsed.fmt.rate, KBPS);
-    writeFileSync(join(OUT, file.replace(/\.wav$/, '.mp3')), mp3);
+    writeFileSync(join(OUT, file.replace(/\.wav$/i, '.mp3')), mp3);
 
     before += src.length;
     after += mp3.length;
     const kb = (n) => `${(n / 1024).toFixed(1)} kB`;
     console.log(
-        `${kb(src.length).padStart(9)} -> ${kb(mp3.length).padStart(8)}  (${(100 - (mp3.length / src.length) * 100).toFixed(0)}% off)  ${file.replace(/\.wav$/, '.mp3')}`
+        `${kb(src.length).padStart(9)} -> ${kb(mp3.length).padStart(8)}  (${(100 - (mp3.length / src.length) * 100).toFixed(0)}% off)  ${file.replace(/\.wav$/i, '.mp3')}`
     );
 }
 
