@@ -1,5 +1,6 @@
 import {
     CCFloat,
+    Canvas,
     Component,
     Label,
     Layout,
@@ -7,6 +8,7 @@ import {
     Prefab,
     UITransform,
     Vec2,
+    Vec3,
     _decorator,
     instantiate,
     tween,
@@ -18,6 +20,7 @@ import { openStore } from "./cta";
 import { HiveView } from "./hive-view";
 import { LaneView } from "./lane-view";
 import { SocketView } from "./socket-view";
+import { TopHiveView } from "./top-hive-view";
 
 const { ccclass, property } = _decorator;
 
@@ -56,6 +59,10 @@ export class HudView extends Component {
 
     @property(CCFloat)
     flyDuration = 0.22;
+
+    /** The hive at the top of the board. Bees deliver the cubes they pull out into it. */
+    @property(TopHiveView)
+    topHive: TopHiveView = null!;
 
     @property(Node)
     winPanel: Node = null!;
@@ -258,6 +265,37 @@ export class HudView extends Component {
 
     getBoardFraction(): number {
         return this.boardFraction;
+    }
+
+    /**
+     * UI world space is the design resolution; `Camera.screenPointToRay`, which is what the bee
+     * swarm feeds these to, reads framebuffer pixels. Going through the Canvas' own camera
+     * converts between the two for free — worldToScreen and screenPointToRay share one space,
+     * and `view.getVisibleSize()` is not it.
+     */
+    private toScreen(node: Node | null): Vec3 | null {
+        const camera = this.getComponent(Canvas)?.cameraComponent;
+        if (!camera || !node?.activeInHierarchy) return null;
+        return camera.worldToScreen(node.worldPosition);
+    }
+
+    /** Screen-space (px, bottom-left origin) centre of a firing slot — a bee launches from here. */
+    slotScreenPos(slot: number): Vec3 | null {
+        return this.toScreen(this.slots[slot]?.mouth ?? null);
+    }
+
+    /** Screen-space centre of the hive cubes are carried to. */
+    hiveScreenPos(): Vec3 | null {
+        return this.toScreen(this.topHive?.mouth ?? null);
+    }
+
+    deliverToHive(): void {
+        this.topHive?.deliver();
+    }
+
+    /** A bee just left this firing slot's hive. */
+    popSlot(slot: number): void {
+        this.slots[slot]?.pop();
     }
 
     /** Global `input` fires even for touches on UI nodes, so the drag rig asks before dragging. */

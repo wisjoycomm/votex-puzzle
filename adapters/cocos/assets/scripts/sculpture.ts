@@ -4,7 +4,7 @@ import type { LevelDef, V3 } from "core";
 import { materialFor } from "./colors";
 
 // Cubes fall in from this many grid steps above their cell. Raise for a bigger drop.
-const SPAWN_DROP = 1.2;
+const SPAWN_DROP = 1;
 // Seconds one cube takes to land.
 const SPAWN_FALL = 0.3;
 // Seconds between one row landing and the next. Raise for a slower cascade; 0 = all at once.

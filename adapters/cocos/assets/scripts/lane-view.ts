@@ -50,7 +50,9 @@ export class LaneView extends Component {
         const front = this.sockets[0];
         if (!front) return;
         front.node.on(Node.EventType.TOUCH_END, () => {
-            if (front.filled) onActivate();
+            if (!front.filled) return;
+            front.pop();
+            onActivate();
         });
     }
 

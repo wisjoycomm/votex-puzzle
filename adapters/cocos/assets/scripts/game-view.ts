@@ -4,6 +4,7 @@ import {
     EffectAsset,
     JsonAsset,
     Mesh,
+    Prefab,
     Vec3,
     _decorator,
     view,
@@ -12,6 +13,8 @@ import { GameCore, parseBoxyBlastLevel } from "core";
 import type { BoxyBlastLevel, LevelDef } from "core";
 import { isVisible, whenReady } from "playable-ads-core";
 
+import { createBeeSwarm } from "./bee";
+import type { BeeSwarm } from "./bee";
 import { createCameraRig } from "./camera-rig";
 import type { CameraRig } from "./camera-rig";
 import { HudView } from "./hud-view";
@@ -52,6 +55,9 @@ export class GameView extends Component {
     })
     levelData: JsonAsset = null!;
 
+    @property({ type: Prefab, tooltip: "prefabs/Bee_2.prefab" })
+    beePrefab: Prefab = null!;
+
     @property({
         type: HudView,
         tooltip: "The HudView component on the Canvas",
@@ -61,6 +67,7 @@ export class GameView extends Component {
     private core!: GameCore;
     private sculpture!: Sculpture;
     private rig!: CameraRig;
+    private swarm!: BeeSwarm;
     /** Share of the viewport the HUD board covers. Zero until the HUD has laid out. */
     private boardFraction = 0;
     private distance = 0;
@@ -73,10 +80,11 @@ export class GameView extends Component {
             !this.cubeMesh ||
             !this.toonEffect ||
             !this.levelData ||
+            !this.beePrefab ||
             !this.hudView
         ) {
             console.error(
-                "[game-view] assign sceneCamera, cubeMesh, toonEffect, levelData and hudView in the Inspector",
+                "[game-view] assign sceneCamera, cubeMesh, toonEffect, levelData, beePrefab and hudView in the Inspector",
             );
             return;
         }
@@ -111,7 +119,26 @@ export class GameView extends Component {
             level.initialRotation,
         );
 
-        this.core.on("cubeShot", (e) => destroyCube(this.sculpture, e.cell));
+        this.swarm = createBeeSwarm({
+            // This node, not sculpture.root: bees are positioned in world space, so inheriting
+            // the drag rig's rotation would spin them around the model on top of their own route.
+            parent: this.node,
+            camera: this.sceneCamera,
+            beePrefab: this.beePrefab,
+            effect: this.toonEffect,
+            sculpture: this.sculpture,
+            slotScreenPos: (slot) => this.hudView.slotScreenPos(slot),
+            hiveScreenPos: () => this.hudView.hiveScreenPos(),
+            onLaunch: (slot) => this.hudView.popSlot(slot),
+            onDeliver: () => this.hudView.deliverToHive(),
+        });
+
+        this.core.on("cubeShot", (e) => {
+            destroyCube(this.sculpture, e.cell);
+            // e.path is the route core already proved the cube reachable by — presentation-only,
+            // and the only thing that knows how a bee can get in and back out without clipping.
+            this.swarm.spawn(e.cell, e.color, e.slot, e.path);
+        });
         this.core.on("gameWon", () => console.log("[game-view] WON"));
         this.core.on("gameLost", () => console.log("[game-view] LOST"));
 
@@ -155,11 +182,15 @@ export class GameView extends Component {
         // Off-screen or backgrounded: keep drawing, stop the clock.
         if (!isVisible()) return;
 
-        // The speed control scales the simulation, but not the camera rig — rotation follows the
-        // player's hand, and speeding that up just reads as a bug.
+        // The speed control scales the simulation and the bees together, but not the camera rig —
+        // rotation follows the player's hand, and speeding that up just reads as a bug.
+        const scaled = dt * this.hudView.getSpeed();
         this.rig.update(dt);
         this.core.setViewDirection(this.rig.getViewDir());
-        const frame = this.core.update(dt * this.hudView.getSpeed());
+        const frame = this.core.update(scaled);
+        // After core.update, not before: a cube shot this frame is then placed on its route in
+        // the same frame, instead of showing one frame parked where its last flight ended.
+        this.swarm.update(scaled);
         this.hudView.refresh(frame.state);
         // After refresh: fitBoard() runs in there. Reframing every frame rather than off the
         // resize poll — the camera depends on the board, so it cannot be a frame behind it.

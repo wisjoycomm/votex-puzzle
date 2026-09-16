@@ -1,6 +1,7 @@
 import {
     CCInteger,
     Component,
+    Node,
     Prefab,
     UIOpacity,
     _decorator,
@@ -23,6 +24,15 @@ export class SocketView extends Component {
 
     get filled(): boolean {
         return !!this.hive?.shown;
+    }
+
+    /** The hole a bee launches from. Falls back to the socket while no hive has been spawned. */
+    get mouth(): Node {
+        return this.hive?.mouth ?? this.node;
+    }
+
+    pop(): void {
+        this.hive?.pop();
     }
 
     setHivePrefab(prefab: Prefab): void {
