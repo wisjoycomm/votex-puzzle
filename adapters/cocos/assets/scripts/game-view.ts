@@ -155,9 +155,11 @@ export class GameView extends Component {
         // Off-screen or backgrounded: keep drawing, stop the clock.
         if (!isVisible()) return;
 
+        // The speed control scales the simulation, but not the camera rig — rotation follows the
+        // player's hand, and speeding that up just reads as a bug.
         this.rig.update(dt);
         this.core.setViewDirection(this.rig.getViewDir());
-        const frame = this.core.update(dt);
+        const frame = this.core.update(dt * this.hudView.getSpeed());
         this.hudView.refresh(frame.state);
         // After refresh: fitBoard() runs in there. Reframing every frame rather than off the
         // resize poll — the camera depends on the board, so it cannot be a frame behind it.

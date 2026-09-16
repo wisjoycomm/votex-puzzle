@@ -1,6 +1,7 @@
 import {
     CCFloat,
     Component,
+    Label,
     Layout,
     Node,
     Prefab,
@@ -19,6 +20,9 @@ import { LaneView } from "./lane-view";
 import { SocketView } from "./socket-view";
 
 const { ccclass, property } = _decorator;
+
+// x1 is the tuned look; the rest are speed-ups for a player who has already understood the game.
+const SPEEDS = [1, 2, 3, 5];
 
 /**
  * Binds the editor-authored HUD to GameCore state. Layout is the scene's; this writes data.
@@ -62,6 +66,13 @@ export class HudView extends Component {
     @property([Node])
     ctaButtons: Node[] = [];
 
+    /** Tap target that cycles x1 -> x2 -> x3 -> x5. Optional: leave unassigned to pin at x1. */
+    @property(Node)
+    speedButton: Node = null!;
+
+    @property(Label)
+    speedLabel: Label = null!;
+
     private lanes: LaneView[] = [];
     private slots: SocketView[] = [];
     private onActivate: ((lane: number) => number | null) | null = null;
@@ -69,12 +80,27 @@ export class HudView extends Component {
     private lastState: GameState | null = null;
     /** Slots whose hive is mid-flight, held empty so the flight reads as movement. */
     private flying = new Set<number>();
+    private speedIndex = 0;
 
     bind(onActivate: (lane: number) => number | null): void {
         this.onActivate = onActivate;
         for (const cta of this.ctaButtons) {
             cta.on(Node.EventType.TOUCH_END, () => openStore());
         }
+        this.speedButton?.on(Node.EventType.TOUCH_END, () => {
+            this.speedIndex = (this.speedIndex + 1) % SPEEDS.length;
+            this.showSpeed();
+        });
+        this.showSpeed();
+    }
+
+    /** Simulation multiplier. GameView scales its dt by this; the camera rig deliberately ignores it. */
+    getSpeed(): number {
+        return SPEEDS[this.speedIndex]!;
+    }
+
+    private showSpeed(): void {
+        if (this.speedLabel) this.speedLabel.string = `x${this.getSpeed()}`;
     }
 
     private spawn<T extends Component>(
@@ -237,19 +263,20 @@ export class HudView extends Component {
     /** Global `input` fires even for touches on UI nodes, so the drag rig asks before dragging. */
     hitsUi(point: Vec2): boolean {
         for (const cta of this.ctaButtons) {
-            if (!cta.activeInHierarchy) continue;
-            if (
-                cta
-                    .getComponent(UITransform)!
-                    .getBoundingBoxToWorld()
-                    .contains(point)
-            ) {
-                return true;
-            }
+            if (covers(cta, point)) return true;
         }
         if (!this.board?.active) return false;
+        if (covers(this.speedButton, point)) return true;
         return this.lanes.some((lane) => lane.hits(point));
     }
+}
+
+function covers(node: Node | null, point: Vec2): boolean {
+    if (!node?.activeInHierarchy) return false;
+    return !!node
+        .getComponent(UITransform)
+        ?.getBoundingBoxToWorld()
+        .contains(point);
 }
 
 function setActive(node: Node | null, active: boolean): void {
