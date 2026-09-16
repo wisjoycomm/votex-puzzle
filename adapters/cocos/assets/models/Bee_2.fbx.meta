@@ -69,11 +69,7 @@
         "gltfIndex": 0,
         "fixAlphaTransparencyArtifacts": true,
         "hasAlpha": true,
-        "type": "texture",
-        "compressSettings": {
-          "useCompressTexture": true,
-          "presetId": "webp"
-        }
+        "type": "texture"
       },
       "ver": "1.0.3",
       "imported": true,

@@ -16,7 +16,7 @@ import {
 } from "cc";
 import type { GameState } from "core";
 
-import { openStore } from "./cta";
+import { EndView } from "./end-view";
 import { HiveView } from "./hive-view";
 import { playSfx } from "./audio-manager";
 import { LaneView } from "./lane-view";
@@ -65,14 +65,11 @@ export class HudView extends Component {
     @property(TopHiveView)
     topHive: TopHiveView = null!;
 
-    @property(Node)
-    winPanel: Node = null!;
+    @property(EndView)
+    winPanel: EndView = null!;
 
-    @property(Node)
-    losePanel: Node = null!;
-
-    @property([Node])
-    ctaButtons: Node[] = [];
+    @property(EndView)
+    losePanel: EndView = null!;
 
     /** Tap target that cycles x1 -> x2 -> x3 -> x5. Optional: leave unassigned to pin at x1. */
     @property(Node)
@@ -92,12 +89,8 @@ export class HudView extends Component {
 
     bind(onActivate: (lane: number) => number | null): void {
         this.onActivate = onActivate;
-        for (const cta of this.ctaButtons) {
-            cta.on(Node.EventType.TOUCH_END, () => {
-                playSfx("click");
-                openStore();
-            });
-        }
+        this.winPanel?.bind();
+        this.losePanel?.bind();
         this.speedButton?.on(Node.EventType.TOUCH_END, () => {
             playSfx("click");
             this.speedIndex = (this.speedIndex + 1) % SPEEDS.length;
@@ -226,8 +219,8 @@ export class HudView extends Component {
         this.lastState = state;
 
         setActive(this.board, state.status === "playing");
-        setActive(this.winPanel, state.status === "won");
-        setActive(this.losePanel, state.status === "lost");
+        this.winPanel?.setShown(state.status === "won");
+        this.losePanel?.setShown(state.status === "lost");
 
         this.ensureBoard(state.columns.length, state.slots.length);
 
@@ -305,9 +298,10 @@ export class HudView extends Component {
 
     /** Global `input` fires even for touches on UI nodes, so the drag rig asks before dragging. */
     hitsUi(point: Vec2): boolean {
-        for (const cta of this.ctaButtons) {
-            if (covers(cta, point)) return true;
-        }
+        // Checked before the board: when a panel is up the board is inactive, and its CTA is
+        // the only thing left on screen worth protecting from the drag rig.
+        if (covers(this.winPanel?.cta, point)) return true;
+        if (covers(this.losePanel?.cta, point)) return true;
         if (!this.board?.active) return false;
         if (covers(this.speedButton, point)) return true;
         return this.lanes.some((lane) => lane.hits(point));
