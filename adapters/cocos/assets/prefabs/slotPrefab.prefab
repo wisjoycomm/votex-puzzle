@@ -164,12 +164,12 @@
       "a": 255
     },
     "_spriteFrame": {
-      "__uuid__": "fc4b7ad4-f84c-4ccb-b0f2-0458a255aa3d@f9941",
+      "__uuid__": "dde6703e-b421-4a8d-91de-ba6836a2a072@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
     "_type": 0,
     "_fillType": 0,
-    "_sizeMode": 1,
+    "_sizeMode": 0,
     "_fillCenter": {
       "__type__": "cc.Vec2",
       "x": 0,

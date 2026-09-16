@@ -1,0 +1,13 @@
+{
+    "package_version": 2,
+    "version": "1.0.0",
+    "name": "playable-build",
+    "title": "Playable Build",
+    "description": "Turns the web-mobile build into one self-contained index.html per ad network.",
+    "author": "votex-puzzle",
+    "main": "./builder.js",
+    "editor": ">=3.8.0",
+    "contributions": {
+        "builder": "./builder"
+    }
+}

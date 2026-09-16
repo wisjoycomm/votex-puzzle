@@ -306,7 +306,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 33.369140625,
+      "width": 60,
       "height": 50.4
     },
     "_anchorPoint": {
@@ -342,12 +342,12 @@
       "b": 255,
       "a": 255
     },
-    "_string": "1",
+    "_string": "10",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
     "_actualFontSize": 60,
     "_fontSize": 60,
-    "_fontFamily": "Arial",
+    "_fontFamily": "LuckiestGuy",
     "_lineHeight": 40,
     "_overflow": 0,
     "_enableWrapText": true,
