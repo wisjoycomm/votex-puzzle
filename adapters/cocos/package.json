@@ -5,8 +5,16 @@
   "creator": {
     "version": "3.8.6"
   },
+  "scripts": {
+    "shrink-levels": "node scripts/shrink-level.mjs ../../packages/core/src/teddy_burgundy.json assets/levels/teddy.json && node scripts/shrink-level.mjs ../playcanvas/levels-src/easy.json assets/levels/easy.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build:all": "\"C:/ProgramData/cocos/editors/Creator/3.8.6/CocosCreator.exe\" --project . --build \"platform=web-mobile;debug=false\""
+  },
   "dependencies": {
     "core": "*",
     "playable-ads-core": "*"
+  },
+  "devDependencies": {
+    "playable-adapter-core": "^1.2.4"
   }
 }
