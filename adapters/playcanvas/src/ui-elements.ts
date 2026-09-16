@@ -1,10 +1,4 @@
-import {
-    Color,
-    ELEMENTTYPE_GROUP,
-    ELEMENTTYPE_IMAGE,
-    ELEMENTTYPE_TEXT,
-    Entity
-} from 'playcanvas';
+import { Color, ELEMENTTYPE_GROUP, ELEMENTTYPE_IMAGE, ELEMENTTYPE_TEXT, Entity } from 'playcanvas';
 import type { AppBase, Asset } from 'playcanvas';
 
 // Shared factory helpers for the canvas-drawn UI. No layout and no game state — just the

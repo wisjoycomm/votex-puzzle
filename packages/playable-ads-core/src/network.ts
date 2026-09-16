@@ -1,14 +1,24 @@
 // Which ad network we're in, and when it lets the game run.
 // No engine import here by design — window/document/navigator only.
 
-/** `mraid` covers AppLovin, ironSource, Unity, Vungle, Mintegral and Moloco — identical from here. */
-export type AdNetwork = "meta" | "google" | "mraid" | "none";
+/**
+ * The networks this game builds for. `mraid` is the generic one — AppLovin, ironSource, Moloco and
+ * anything else that speaks plain MRAID. Unity, Vungle and Mintegral get their own build because
+ * their click and end-of-run APIs differ: Unity is MRAID, Vungle talks over `postMessage` to the
+ * parent frame, Mintegral calls globals its container injects.
+ */
+export const AD_NETWORKS = ["meta", "google", "mraid", "unity", "vungle", "mintegral"] as const;
+
+export type AdNetwork = (typeof AD_NETWORKS)[number] | "none";
 
 type NetworkHooks = {
     FbPlayableAd?: { onCTAClick?: () => void };
     ExitApi?: { exit?: () => void };
     mraid?: Mraid;
+    /** Mintegral's container injects these; `gameReady` is how its own SDK sniffs the protocol. */
     install?: () => void;
+    gameReady?: () => void;
+    gameEnd?: () => void;
 };
 
 type Mraid = {
@@ -27,12 +37,37 @@ function mraid(): Mraid | undefined {
     return typeof api?.getState === "function" ? api : undefined;
 }
 
-/** Probed per call, not cached: several SDKs inject after the creative's script runs. */
+/**
+ * The network this file was BUILT for, stamped into `<head>` as `window.__AD_NETWORK__` by the
+ * build (vite `network-head` plugin / the Cocos `playable-build` extension). `undefined` in dev
+ * and in any build that didn't stamp it.
+ *
+ * This is what `detectNetwork()` answers with when present: the build knows its target, and some
+ * SDKs inject late enough that a probe at click time can still miss them. Whether the SDK is
+ * actually *callable* is a separate question, guarded at the call site in `openStore`.
+ */
+export function buildNetwork(): AdNetwork | undefined {
+    const stamp = (globalThis as { __AD_NETWORK__?: string }).__AD_NETWORK__;
+    return AD_NETWORKS.find((n) => n === stamp);
+}
+
+/**
+ * The build stamp when there is one, otherwise a probe. Probed per call, not cached: several SDKs
+ * inject after the creative's script runs, which is also why the stamp is trusted over the probe.
+ */
 export function detectNetwork(): AdNetwork {
+    const stamped = buildNetwork();
+    if (stamped) return stamped;
+
     const h = hooks();
     if (typeof h.FbPlayableAd?.onCTAClick === "function") return "meta";
     if (typeof h.ExitApi?.exit === "function") return "google";
+    // Before the mraid check: Mintegral's container speaks MRAID too, but wants its own globals.
+    if (typeof h.gameReady === "function" || typeof h.gameEnd === "function") return "mintegral";
+    // Unity is MRAID on the wire, so a probe can't tell the two apart - only the stamp can, and
+    // it doesn't matter: they take the same call.
     if (mraid()) return "mraid";
+    // Vungle injects nothing to probe for. Its build is the only way to know, so no branch here.
     return "none";
 }
 

@@ -36,7 +36,6 @@ export type Hud = {
     destroy(): void;
 };
 
-
 // x1 is the tuned look (flight timings in bee.ts are set for it); the rest are speed-ups for a
 // player who doesn't want to watch every bee. Cycles 1 -> 2 -> 3 -> 5 -> 1.
 const SPEEDS = [1, 2, 3, 5];

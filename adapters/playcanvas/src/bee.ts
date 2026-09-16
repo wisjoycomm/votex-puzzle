@@ -7,7 +7,6 @@ import { materialFor } from './colors.ts';
 import { CUBE_SCALE, CUBE_WORLD_SIZE } from './sculpture.ts';
 import { sfx } from './sfx.ts';
 
-
 // inspect-glb: Bee_2.glb measures 1.2405 x 0.7109 x 1.2414 units and a cube is exactly 1 unit,
 // so this renders the bee at ~0.012 units — roughly 1% of a cube. Deliberate for now; raise
 // towards 0.5 for a bee that reads at about 60% of a cube.
@@ -71,26 +70,21 @@ export type FlightPath = {
     points: Vec3[];
     /** Outward normal of the face the bee grabs. */
     face: Vec3;
-}
+};
 
 export type BeeSwarm = {
     /** Send a bee to the cube just destroyed at `localCubePos`, launching from `originScreen`
      *  (the firing slot). With a `path` it flies the real channel in, grabs the face the path
      *  arrives at, and carries the cube back out the same way; without one it swoops straight. */
-    spawn(
-        localCubePos: Vec3,
-        color: number,
-        originScreen?: { x: number; y: number },
-        path?: FlightPath
-    ): void;
+    spawn(localCubePos: Vec3, color: number, originScreen?: { x: number; y: number }, path?: FlightPath): void;
     update(dt: number): void;
-}
+};
 
 // `ContainerResource`'s public .d.ts declares `instantiateRenderEntity` as `(options: any) => any`
 // with no narrower overload — typed locally, matching the GlbContainer workaround in sculpture.ts.
 type GlbContainer = {
     instantiateRenderEntity(): Entity;
-}
+};
 
 type BeeInstance = {
     root: Entity;
@@ -104,7 +98,7 @@ type BeeInstance = {
     inUse: boolean;
     /** Route this bee was given, in sculpture-local space — drawn when DEBUG_PATHS is on. */
     debugPoints: Vec3[] | null;
-}
+};
 
 type Rider = { entity: Entity; offset: Vec3 };
 
@@ -432,7 +426,9 @@ export function createBeeSwarm(
             .easing(easing)
             .onUpdate(() => {
                 dir.lerp(fromDir, toDir, progress.t).normalize();
-                pos.copy(dir).mulScalar(fromLen + (toLen - fromLen) * progress.t).add(centre);
+                pos.copy(dir)
+                    .mulScalar(fromLen + (toLen - fromLen) * progress.t)
+                    .add(centre);
                 for (const r of riders) r.entity.setPosition(riderPos.add2(pos, r.offset));
 
                 if (facing && progress.t > 0) {
@@ -536,9 +532,7 @@ export function createBeeSwarm(
 
         // Which face to land on. Without a path (shouldn't happen for a cube we just shot)
         // approach straight from wherever the bee launched, as before.
-        const face = path
-            ? path.face.clone()
-            : new Vec3().sub2(originLocal, localCubePos).normalize();
+        const face = path ? path.face.clone() : new Vec3().sub2(originLocal, localCubePos).normalize();
         if (face.lengthSq() < 1e-6) face.copy(Vec3.FORWARD);
         const grabOffset = face.clone().mulScalar(GRAB_DISTANCE);
         const grabLocal = new Vec3().add2(localCubePos, grabOffset);
@@ -551,10 +545,7 @@ export function createBeeSwarm(
 
         // Direction the escape route leaves the grid by. For a bent path that is NOT the cube's
         // face normal, so take it from the outermost pair of waypoints.
-        const exitDir =
-            channel.length >= 2
-                ? new Vec3().sub2(channel[0]!, channel[1]!).normalize()
-                : face.clone();
+        const exitDir = channel.length >= 2 ? new Vec3().sub2(channel[0]!, channel[1]!).normalize() : face.clone();
 
         // Standoff: a short hop back along the exit axis. Moving along that axis from a point
         // already outside the grid only ever moves further out, so standoff -> mouth is clear
@@ -645,16 +636,7 @@ export function createBeeSwarm(
                 );
 
             // Leg 1: swing AROUND the model and out to the escape sphere at the same time.
-            flyWorldOrbit(
-                riders,
-                from,
-                escape,
-                centre,
-                FLY_OUT_MS * ESCAPE_MS_SHARE,
-                Easing.Linear.None,
-                crossTo,
-                bee
-            );
+            flyWorldOrbit(riders, from, escape, centre, FLY_OUT_MS * ESCAPE_MS_SHARE, Easing.Linear.None, crossTo, bee);
         };
 
         // Every leg below is timed at the same units-per-second, so there is no speed change
@@ -680,24 +662,10 @@ export function createBeeSwarm(
             );
 
         const weaveIn = (): void =>
-            flyLocalPath(
-                beeOnly,
-                weave,
-                pathLength(weave) * FLIGHT_MS_PER_UNIT,
-                Easing.Linear.None,
-                carryOut,
-                bee
-            );
+            flyLocalPath(beeOnly, weave, pathLength(weave) * FLIGHT_MS_PER_UNIT, Easing.Linear.None, carryOut, bee);
 
         const dropIn = (): void =>
-            flyLocalPath(
-                beeOnly,
-                descent,
-                pathLength(descent) * FLIGHT_MS_PER_UNIT,
-                Easing.Linear.None,
-                weaveIn,
-                bee
-            );
+            flyLocalPath(beeOnly, descent, pathLength(descent) * FLIGHT_MS_PER_UNIT, Easing.Linear.None, weaveIn, bee);
 
         flyOrbit(beeOnly, originLocal, standoff, APPROACH_MS, Easing.Quadratic.In, dropIn, bee);
     }

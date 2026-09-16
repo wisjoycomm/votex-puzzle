@@ -1,6 +1,6 @@
 import { GameCore, parseBoxyBlastLevel } from 'core';
 import type { BoxyBlastLevel } from 'core';
-import { isVisible, whenReady } from 'playable-ads-core';
+import { gameEnded, isVisible, whenReady } from 'playable-ads-core';
 import {
     AppBase,
     AppOptions,
@@ -128,15 +128,7 @@ const core = new GameCore(level, Date.now());
 const hud = await createHud(app, (lane) => core.activateColumn(lane));
 
 const rig = createCameraRig(canvas, sculpture.root, camera, hud.hitsButton, level.initialRotation);
-const bees = createBeeSwarm(
-    app,
-    camera,
-    sculpture.mesh,
-    distance,
-    sculpture.root,
-    sculpture.radius,
-    backdrop
-);
+const bees = createBeeSwarm(app, camera, sculpture.mesh, distance, sculpture.root, sculpture.radius, backdrop);
 
 core.on('hiveActivated', () => sfx('spawn'));
 
@@ -152,9 +144,9 @@ core.on('cubeShot', (e) => {
     // grid, so it just needs centering like any other cell.
     const path = e.path
         ? {
-            points: e.path.points.map((p) => gridToLocal(sculpture, p)),
-            face: new Vec3(e.path.face.x, e.path.face.y, e.path.face.z)
-        }
+              points: e.path.points.map((p) => gridToLocal(sculpture, p)),
+              face: new Vec3(e.path.face.x, e.path.face.y, e.path.face.z)
+          }
         : undefined;
 
     bees.spawn(cubeLocal, e.color, hud.getSlotScreenPos(e.slot), path);
@@ -162,8 +154,16 @@ core.on('cubeShot', (e) => {
 // The HUD still switches between its gameplay, win and lose groups off frame.state.status in
 // refresh() — these handlers own no state, they just need the one edge the polled status can't
 // give them: the single frame the round ended on.
-core.on('gameWon', () => sfx('win'));
-core.on('gameLost', () => sfx('lose'));
+// gameEnded() tells Vungle and Mintegral the run is over - required alongside the store click,
+// ignored everywhere else. On both outcomes: the network wants "ended", not "won".
+core.on('gameWon', () => {
+    sfx('win');
+    gameEnded();
+});
+core.on('gameLost', () => {
+    sfx('lose');
+    gameEnded();
+});
 
 let lastWidth = 0;
 let lastHeight = 0;

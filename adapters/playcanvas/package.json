@@ -6,19 +6,22 @@
     "type": "module",
     "scripts": {
         "build": "vite build",
-        "build:all": "npm run build:meta && npm run build:google && npm run build:mraid",
+        "build:all": "npm run build:meta && npm run build:google && npm run build:mraid && npm run build:unity && npm run build:vungle && npm run build:mintegral",
         "build:google": "vite build --mode google",
         "build:meta": "vite build --mode meta",
+        "build:mintegral": "vite build --mode mintegral",
         "build:mraid": "vite build --mode mraid",
+        "build:unity": "vite build --mode unity",
+        "build:vungle": "vite build --mode vungle",
         "dev": "vite",
         "fmt": "prettier --check .",
         "fmt:fix": "prettier --write .",
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
-        "shrink-levels": "node scripts/shrink-level.mjs ../../packages/core/src/teddy_burgundy.json src/assets/levels/teddy.json && node scripts/shrink-level.mjs levels-src/easy.json src/assets/levels/easy.json",
+        "shrink-levels": "node ../../scripts/shrink-level.mjs ../../packages/core/src/teddy_burgundy.json src/assets/levels/teddy.json && node ../../scripts/shrink-level.mjs levels-src/easy.json src/assets/levels/easy.json",
         "start": "vite preview",
-        "to-webp": "node scripts/to-webp.mjs",
-        "typecheck": "tsc --noEmit"
+        "typecheck": "tsc --noEmit",
+        "verify": "node ../../scripts/verify-playable.mjs \"dist/*.html\""
     },
     "dependencies": {
         "@tweenjs/tween.js": "^25.0.0",
@@ -27,7 +30,6 @@
         "playcanvas": "^2.22.0"
     },
     "devDependencies": {
-        "@breezystack/lamejs": "^1.2.7",
         "@playcanvas/eslint-config": "3.0.0-beta.8",
         "eslint": "^9.39.5",
         "prettier": "^3.9.6",

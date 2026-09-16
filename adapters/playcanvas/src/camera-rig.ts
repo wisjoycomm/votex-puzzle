@@ -31,10 +31,7 @@ export function createCameraRig(
     //
     // Pitch is clamped like any other, so a level can't open somewhere the drag rig could never
     // return to.
-    const startPitch = Math.max(
-        -PITCH_LIMIT,
-        Math.min(PITCH_LIMIT, -(initialRotation?.x ?? 0))
-    );
+    const startPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, -(initialRotation?.x ?? 0)));
     const startYaw = -(initialRotation?.y ?? 0);
 
     // target* is set from input; yaw/pitch ease toward it each frame (see update()). Both start

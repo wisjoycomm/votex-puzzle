@@ -5,7 +5,14 @@
     "packages/*",
     "adapters/*"
   ],
+  "scripts": {
+    "shrink-level": "node scripts/shrink-level.mjs",
+    "shrink-audio": "node scripts/shrink-audio.mjs",
+    "to-webp": "node scripts/to-webp.mjs",
+    "verify:playable": "node scripts/verify-playable.mjs"
+  },
   "devDependencies": {
+    "@breezystack/lamejs": "^1.2.7",
     "@types/node": "^26.5.1",
     "typescript": "~6.0.3"
   }

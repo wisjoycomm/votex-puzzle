@@ -1,7 +1,7 @@
 import { Component, Node, UIOpacity, Vec3, _decorator, tween } from "cc";
 
 import { playSfx } from "./audio-manager";
-import { openStore } from "./cta";
+import { openStore } from "playable-ads-core";
 
 const { ccclass, property } = _decorator;
 

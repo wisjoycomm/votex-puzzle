@@ -11,7 +11,7 @@ import {
 } from "cc";
 import { GameCore, parseBoxyBlastLevel } from "core";
 import type { BoxyBlastLevel, LevelDef } from "core";
-import { isVisible, whenReady } from "playable-ads-core";
+import { gameEnded, isVisible, whenReady } from "playable-ads-core";
 
 import { createBeeSwarm } from "./bee";
 import type { BeeSwarm } from "./bee";
@@ -148,8 +148,16 @@ export class GameView extends Component {
         });
         // The HUD polls frame.state.status for its win/lose groups — these two handlers exist
         // only for the single frame the round ended on, which a polled status can't give them.
-        this.core.on("gameWon", () => playSfx("win"));
-        this.core.on("gameLost", () => playSfx("lose"));
+        // gameEnded() tells Vungle and Mintegral the run is over - required alongside the store
+        // click, ignored everywhere else. On both outcomes: the network wants "ended", not "won".
+        this.core.on("gameWon", () => {
+            playSfx("win");
+            gameEnded();
+        });
+        this.core.on("gameLost", () => {
+            playSfx("lose");
+            gameEnded();
+        });
 
         console.log(
             `[game-view] ${this.sculpture.cubeCount} cubes, radius ${this.sculpture.radius.toFixed(2)}, ` +

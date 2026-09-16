@@ -2,7 +2,7 @@ import { Asset, ELEMENTTYPE_IMAGE, Entity, Layer, SCALEMODE_NONE, Vec4 } from 'p
 import type { AppBase, CameraComponent } from 'playcanvas';
 
 // `?inline` = base64 data URI, so the playable stays one file. WebP via `npm run to-webp`.
-import BACKGROUND_URL from './assets/sprites/Dark BG 01.png?inline';
+import BACKGROUND_URL from './assets/sprites/Dark BG 01.webp?inline';
 import HIVE_BACK_URL from './assets/sprites/Layer 02.webp?inline';
 import HIVE_FRONT_URL from './assets/sprites/Layer 03.webp?inline';
 import CANOPY_URL from './assets/sprites/Top Leaf.webp?inline';
@@ -29,7 +29,7 @@ const ENTRANCE_Y_FRACTION = 1;
 /** CSS px below the hive where a bee lines up, so the last stretch is straight up. */
 const APPROACH_DROP = 50;
 
-// Dark BG 01.png is 50x50 flat bands, not a gradient: rows 0-2 #676C91, 3-5 #212335, 6-49 #31344C.
+// Dark BG 01 is 50x50 flat bands, not a gradient: rows 0-2 #676C91, 3-5 #212335, 6-49 #31344C.
 // Sample one row from the middle of a band, never its edge — a rect ending on a boundary blends
 // into the next band along the seam. v runs from the bottom.
 const SKY_RECT = new Vec4(0, 48 / 50, 1, 1 / 50); // row 1
@@ -129,15 +129,7 @@ export async function createBackdrop(app: AppBase, camera: Entity): Promise<Back
 
     // Sibling order is draw order within a layer: canopy, then the hive's back shell over it.
     addTopCentre(behind, 'canopy', canopy, CANOPY_WIDTH, CANOPY_HEIGHT, 0, backdropLayer);
-    const back = addTopCentre(
-        behind,
-        'hive-back',
-        hiveBack,
-        HIVE_WIDTH,
-        HIVE_HEIGHT,
-        -HIVE_TOP_OFFSET,
-        backdropLayer
-    );
+    const back = addTopCentre(behind, 'hive-back', hiveBack, HIVE_WIDTH, HIVE_HEIGHT, -HIVE_TOP_OFFSET, backdropLayer);
 
     // Front shell on the default UI layer, so it draws over a bee at the entrance.
     addTopCentre(front, 'hive-front', hiveFront, HIVE_WIDTH, HIVE_HEIGHT, -HIVE_TOP_OFFSET);

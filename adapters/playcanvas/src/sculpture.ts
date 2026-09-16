@@ -18,7 +18,7 @@ export type Sculpture = {
     /** Midpoint of the populated cells, subtracted from every grid coordinate to get a local one.
      *  Exposed so core's grid-space flight paths can be placed in this hierarchy. */
     center: V3;
-}
+};
 
 /** Grid coordinate -> position inside `root`. Local, not world: `root` rotates under the drag
  *  rig, so anything following a path has to be re-transformed each frame rather than baked once. */
@@ -46,7 +46,7 @@ export function cellKey(p: V3): string {
 // declared class member. Typed locally rather than casting through the incomplete public type.
 type GlbContainer = {
     renders: { resource: { meshes: (Mesh | null)[] } }[];
-}
+};
 
 async function loadCubeMesh(app: AppBase): Promise<Mesh> {
     const asset = new Asset('bee-cube', 'container', { url: CUBE_MODEL_URL });
@@ -70,8 +70,12 @@ export async function buildSculpture(app: AppBase, level: LevelDef): Promise<Scu
     const mesh = await loadCubeMesh(app);
     const { nx, ny } = level.size;
 
-    let minX = Infinity, minY = Infinity, minZ = Infinity;
-    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    let minX = Infinity,
+        minY = Infinity,
+        minZ = Infinity;
+    let maxX = -Infinity,
+        maxY = -Infinity,
+        maxZ = -Infinity;
     const populated: { pos: V3; color: number }[] = [];
 
     level.cells.forEach((color, i) => {
@@ -82,9 +86,12 @@ export async function buildSculpture(app: AppBase, level: LevelDef): Promise<Scu
             z: Math.floor(i / (nx * ny))
         };
         populated.push({ pos, color });
-        minX = Math.min(minX, pos.x); maxX = Math.max(maxX, pos.x);
-        minY = Math.min(minY, pos.y); maxY = Math.max(maxY, pos.y);
-        minZ = Math.min(minZ, pos.z); maxZ = Math.max(maxZ, pos.z);
+        minX = Math.min(minX, pos.x);
+        maxX = Math.max(maxX, pos.x);
+        minY = Math.min(minY, pos.y);
+        maxY = Math.max(maxY, pos.y);
+        minZ = Math.min(minZ, pos.z);
+        maxZ = Math.max(maxZ, pos.z);
     });
 
     const cx = (minX + maxX) / 2;
