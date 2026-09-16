@@ -15,6 +15,7 @@ import {
 import type { CellPath, V3 } from "core";
 
 import { materialFor } from "./colors";
+import { playSfx } from "./audio-manager";
 import { gridToLocal } from "./sculpture";
 import type { Sculpture } from "./sculpture";
 
@@ -361,6 +362,7 @@ export function createBeeSwarm(opts: {
             riders,
             // Reaching the end of this leg IS the cube going through the hole.
             next: () => {
+                playSfx("hive");
                 onDeliver();
                 return null;
             },

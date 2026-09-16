@@ -15,6 +15,7 @@ import {
 } from "cc";
 import type { GameState } from "core";
 
+import { playSfx } from "./audio-manager";
 import { SocketView } from "./socket-view";
 
 const { ccclass, property } = _decorator;
@@ -51,6 +52,7 @@ export class LaneView extends Component {
         if (!front) return;
         front.node.on(Node.EventType.TOUCH_END, () => {
             if (!front.filled) return;
+            playSfx("click");
             front.pop();
             onActivate();
         });

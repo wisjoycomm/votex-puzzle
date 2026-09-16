@@ -18,6 +18,7 @@ import type { BeeSwarm } from "./bee";
 import { createCameraRig } from "./camera-rig";
 import type { CameraRig } from "./camera-rig";
 import { HudView } from "./hud-view";
+import { playMusic, playSfx } from "./audio-manager";
 import { buildSculpture, destroyCube } from "./sculpture";
 import type { Sculpture } from "./sculpture";
 
@@ -133,14 +134,22 @@ export class GameView extends Component {
             onDeliver: () => this.hudView.deliverToHive(),
         });
 
+        // Queued, not started: the first tap unlocks web audio and the manager takes it from there.
+        playMusic("backtrack");
+
+        this.core.on("hiveActivated", () => playSfx("spawn"));
+
         this.core.on("cubeShot", (e) => {
+            playSfx("shoot");
             destroyCube(this.sculpture, e.cell);
             // e.path is the route core already proved the cube reachable by — presentation-only,
             // and the only thing that knows how a bee can get in and back out without clipping.
             this.swarm.spawn(e.cell, e.color, e.slot, e.path);
         });
-        this.core.on("gameWon", () => console.log("[game-view] WON"));
-        this.core.on("gameLost", () => console.log("[game-view] LOST"));
+        // The HUD polls frame.state.status for its win/lose groups — these two handlers exist
+        // only for the single frame the round ended on, which a polled status can't give them.
+        this.core.on("gameWon", () => playSfx("win"));
+        this.core.on("gameLost", () => playSfx("lose"));
 
         console.log(
             `[game-view] ${this.sculpture.cubeCount} cubes, radius ${this.sculpture.radius.toFixed(2)}, ` +

@@ -18,6 +18,7 @@ import type { GameState } from "core";
 
 import { openStore } from "./cta";
 import { HiveView } from "./hive-view";
+import { playSfx } from "./audio-manager";
 import { LaneView } from "./lane-view";
 import { SocketView } from "./socket-view";
 import { TopHiveView } from "./top-hive-view";
@@ -92,9 +93,13 @@ export class HudView extends Component {
     bind(onActivate: (lane: number) => number | null): void {
         this.onActivate = onActivate;
         for (const cta of this.ctaButtons) {
-            cta.on(Node.EventType.TOUCH_END, () => openStore());
+            cta.on(Node.EventType.TOUCH_END, () => {
+                playSfx("click");
+                openStore();
+            });
         }
         this.speedButton?.on(Node.EventType.TOUCH_END, () => {
+            playSfx("click");
             this.speedIndex = (this.speedIndex + 1) % SPEEDS.length;
             this.showSpeed();
         });
