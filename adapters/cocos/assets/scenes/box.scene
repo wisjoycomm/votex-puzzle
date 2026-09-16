@@ -1,7 +1,7 @@
 [
   {
     "__type__": "cc.SceneAsset",
-    "_name": "game",
+    "_name": "box",
     "_objFlags": 0,
     "__editorExtras__": {},
     "_native": "",
@@ -11,7 +11,7 @@
   },
   {
     "__type__": "cc.Scene",
-    "_name": "game",
+    "_name": "box",
     "_objFlags": 0,
     "__editorExtras__": {},
     "_parent": null,
@@ -68,7 +68,7 @@
     "_globals": {
       "__id__": 97
     },
-    "_id": "db0e22e1-e574-4cba-8e23-94886fb017c0"
+    "_id": "ded8f731-3c7c-458c-b9e4-7fb1d6307637"
   },
   {
     "__type__": "cc.Node",
@@ -324,7 +324,7 @@
       "__expectedType__": "cc.EffectAsset"
     },
     "levelData": {
-      "__uuid__": "0833f9d4-67e1-4a20-96f6-fd919533ad8a",
+      "__uuid__": "b7746bb1-53e4-438f-8adc-497baba72a38",
       "__expectedType__": "cc.JsonAsset"
     },
     "beePrefab": {
@@ -815,7 +815,7 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": -40,
+      "width": -30,
       "height": 146
     },
     "_anchorPoint": {
@@ -847,7 +847,7 @@
     "_paddingRight": 0,
     "_paddingTop": 0,
     "_paddingBottom": 0,
-    "_spacingX": 40,
+    "_spacingX": 30,
     "_spacingY": 0,
     "_verticalDirection": 1,
     "_horizontalDirection": 0,
@@ -952,7 +952,7 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": -40,
+      "width": -24,
       "height": 350
     },
     "_anchorPoint": {
@@ -984,7 +984,7 @@
     "_paddingRight": 0,
     "_paddingTop": 0,
     "_paddingBottom": 0,
-    "_spacingX": 40,
+    "_spacingX": 24,
     "_spacingY": 0,
     "_verticalDirection": 1,
     "_horizontalDirection": 0,
