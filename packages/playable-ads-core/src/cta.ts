@@ -25,13 +25,6 @@ type Hooks = {
     gameEnd?: () => void;
 };
 
-/** Vungle and Mintegral have no URL to hand over - the container already knows the destination. */
-function post(message: string): boolean {
-    if (typeof window === "undefined" || !window.parent || window.parent === window) return false;
-    window.parent.postMessage(message, "*");
-    return true;
-}
-
 /** iPadOS 13+ reports a desktop Mac UA; touch points are what give it away. */
 export function isIos(): boolean {
     const ua = navigator.userAgent;
@@ -67,9 +60,10 @@ export function openStore(urls: StoreUrls = STORE_URLS): void {
             }
             break;
         case "mraid":
+        case "applovin":
         case "unity":
-            // Unity Ads is MRAID on the wire; it differs only in resize handling, which is the
-            // renderer's business, not this one's.
+            // AppLovin and Unity are MRAID on the wire. Unity differs only in resize handling,
+            // which is the renderer's business, not this one's.
             if (typeof hooks.mraid?.open === "function") {
                 hooks.mraid.open(pickStoreUrl(urls));
                 return;
@@ -80,13 +74,6 @@ export function openStore(urls: StoreUrls = STORE_URLS): void {
                 hooks.install();
                 return;
             }
-            break;
-        case "vungle":
-            // Liftoff's spec: 'download' and 'complete' must never both fire. `complete` already
-            // triggers the store itself once enough of the ad has played, so after gameEnded()
-            // has posted it, a CTA tap must stay quiet rather than double-count the click.
-            if (ended) return;
-            if (post("download")) return;
             break;
     }
 
@@ -103,8 +90,8 @@ export function openStore(urls: StoreUrls = STORE_URLS): void {
 let ended = false;
 
 /**
- * Tell the network the run is over. Vungle and Mintegral require this *in addition to* the store
- * click; everyone else ignores it. Call on win and on loss — "ended", not "won".
+ * Tell the network the run is over. Mintegral requires this *in addition to* the store click;
+ * everyone else ignores it. Call on win and on loss — "ended", not "won".
  *
  * Fires once: networks count completions and reject repeats.
  */
@@ -112,15 +99,7 @@ export function gameEnded(): void {
     if (ended) return;
     ended = true;
 
-    const hooks = globalThis as unknown as Hooks;
-    switch (detectNetwork()) {
-        case "mintegral":
-            hooks.gameEnd?.();
-            break;
-        case "vungle":
-            post("complete");
-            break;
-    }
+    if (detectNetwork() === "mintegral") (globalThis as unknown as Hooks).gameEnd?.();
 }
 
 /** Test seam: the once-only latch is module state, and each case needs a fresh one. */

@@ -31,7 +31,7 @@ import { createBeeSwarm } from './bee.ts';
 import { createCameraRig } from './camera-rig.ts';
 import { createHud } from './hud.ts';
 import { buildSculpture, destroyCube, gridToLocal } from './sculpture.ts';
-import { sfx } from './sfx.ts';
+import { sfx, startMusic, updateMusic } from './sfx.ts';
 import './style.css';
 
 // Nothing is drawn until the ad container says it is showing us. No-op without an MRAID SDK.
@@ -168,6 +168,9 @@ core.on('gameLost', () => {
 let lastWidth = 0;
 let lastHeight = 0;
 
+// Armed now, audible from the first tap — browsers won't start audio before a gesture.
+startMusic();
+
 app.on('update', (dt: number) => {
     // Poll for a resized ad slot; the camera reframes because distance depends on aspect.
     if (window.innerWidth !== lastWidth || window.innerHeight !== lastHeight) {
@@ -175,6 +178,9 @@ app.on('update', (dt: number) => {
         lastHeight = window.innerHeight;
         app.resizeCanvas();
     }
+
+    // Above the isVisible() gate on purpose: pausing the track is what a hidden ad has to do.
+    updateMusic();
 
     // Off-screen or backgrounded: keep drawing, stop the clock.
     if (!isVisible()) return;

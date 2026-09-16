@@ -8,17 +8,17 @@ import pkg from './package.json' with { type: 'json' };
 
 // One build per network. Only the <head> differs; the click API is dispatched at runtime in
 // playable-ads-core/cta.ts off the stamp this plugin writes.
-//   build:meta | build:google | build:mraid | build:unity | build:vungle | build:mintegral
+//   build:meta | build:google | build:mraid | build:applovin | build:unity | build:mintegral
 // `mraid` is the generic one: AppLovin, ironSource, Moloco and anything else speaking plain MRAID.
 const MRAID_TAG = '<script src="mraid.js"></script>'; // served by the SDK, 404s locally
 
 const NETWORK_HEAD: Record<string, string> = {
     mraid: MRAID_TAG,
-    unity: MRAID_TAG, // Unity Ads is MRAID on the wire
+    applovin: MRAID_TAG, // AppLovin and Unity are MRAID on the wire too
+    unity: MRAID_TAG,
     google: '<script src="https://tpc.googlesyndication.com/pagead/gadgets/html5/api/exitapi.js"></script>',
     meta: '',
-    // Vungle talks postMessage to the parent frame; Mintegral's container injects its own globals.
-    vungle: '',
+    // Mintegral's container injects its own globals; nothing to load.
     mintegral: '',
     production: ''
 };
@@ -29,7 +29,7 @@ const NETWORK_HEAD: Record<string, string> = {
 // ponytail: this one-liner is duplicated in the Cocos hook, which is CJS and can't import it.
 const buildStamp = () => new Date().toLocaleString('sv-SE').replace(/[-:]/g, '').replace(' ', '-').slice(0, 13);
 
-const NETWORKS = ['meta', 'google', 'mraid', 'unity', 'vungle', 'mintegral'];
+const NETWORKS = ['meta', 'google', 'mraid', 'applovin', 'unity', 'mintegral'];
 
 export default defineConfig(({ mode }) => ({
     // .glb isn't a built-in Vite asset type, so `?inline` would hit the filesystem loader.

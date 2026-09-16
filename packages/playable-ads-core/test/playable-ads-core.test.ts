@@ -161,80 +161,50 @@ test("isVisible follows document.hidden when there is no mraid", () => {
 
 test("gameEnded calls only the network that asked for it", () => {
     const g = globalThis as Record<string, unknown>;
-    const posted: string[] = [];
-    g.window = { parent: { postMessage: (m: string) => posted.push(m) } };
-
     let ends = 0;
     g.gameEnd = () => ends++;
 
-    // Mintegral: its container's own global, nothing posted to the frame.
     g.__AD_NETWORK__ = "mintegral";
     resetGameEnded();
     gameEnded();
     assert.equal(ends, 1);
-    assert.deepEqual(posted, []);
-
-    // Vungle: 'complete' on the parent frame, and gameEnd is NOT its API even when present.
-    g.__AD_NETWORK__ = "vungle";
-    resetGameEnded();
-    gameEnded();
-    assert.equal(ends, 1);
-    assert.deepEqual(posted, ["complete"]);
 
     // Fires once - networks count completions.
     gameEnded();
-    assert.deepEqual(posted, ["complete"]);
+    assert.equal(ends, 1);
 
-    // Everyone else ignores the concept entirely.
-    for (const net of ["meta", "google", "mraid", "unity"]) {
+    // Everyone else ignores the concept entirely, even with gameEnd sitting on the page.
+    for (const net of ["meta", "google", "mraid", "applovin", "unity"]) {
         g.__AD_NETWORK__ = net;
         resetGameEnded();
         gameEnded();
     }
     assert.equal(ends, 1);
-    assert.deepEqual(posted, ["complete"]);
 
-    delete g.window;
     delete g.gameEnd;
     delete g.__AD_NETWORK__;
 });
 
-test("openStore dispatches per network: unity is mraid, mintegral installs, vungle posts", () => {
+test("openStore dispatches per network: the MRAID family opens, mintegral installs", () => {
     const g = globalThis as Record<string, unknown>;
-    const posted: string[] = [];
-    g.window = { parent: { postMessage: (m: string) => posted.push(m) } };
 
-    // Unity takes the MRAID call, with the url.
+    // mraid, applovin and unity are the same call - only the stamp differs.
     const opened: string[] = [];
     clearSdks();
     g.mraid = { getState: () => "default", open: (u: string) => opened.push(u) };
-    g.__AD_NETWORK__ = "unity";
-    resetGameEnded();
-    openStore(URLS);
-    assert.deepEqual(opened, [URLS.android]);
+    for (const net of ["mraid", "applovin", "unity"]) {
+        g.__AD_NETWORK__ = net;
+        openStore(URLS);
+    }
+    assert.deepEqual(opened, [URLS.android, URLS.android, URLS.android]);
 
     // Mintegral takes a bare install(), no url - the container knows the destination.
     let installs = 0;
     clearSdks();
     g.install = () => installs++;
     g.__AD_NETWORK__ = "mintegral";
-    resetGameEnded();
     openStore(URLS);
     assert.equal(installs, 1);
 
-    // Vungle posts 'download'...
-    clearSdks();
-    g.__AD_NETWORK__ = "vungle";
-    resetGameEnded();
-    openStore(URLS);
-    assert.deepEqual(posted, ["download"]);
-
-    // ...but never alongside 'complete': once the run ended, the container drives the store.
-    resetGameEnded();
-    gameEnded();
-    openStore(URLS);
-    assert.deepEqual(posted, ["download", "complete"]);
-
-    delete g.window;
     delete g.__AD_NETWORK__;
 });

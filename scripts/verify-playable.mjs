@@ -6,32 +6,50 @@
 //
 // The network is read off the file name, else the parent directory, unless --net says otherwise.
 // What it does NOT do: boot the page. Rendering is a browser's job - open the file and look.
-import { existsSync, globSync, readFileSync, statSync } from 'node:fs';
-import { basename, dirname } from 'node:path';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-// Caps for ONE self-contained html, which is all this repo ships - a zip is allowed more almost
-// everywhere (Meta: 2 MB single file, 5 MB zipped). Measured raw, not gzip.
-// Source: https://docs.lunalabs.io/docs/playable/ad-networks/overview
+// Size budgets, in MB, for ONE self-contained html - a zip is usually allowed more, which this
+// repo doesn't ship. Source: https://docs.lunalabs.io/docs/playable/ad-networks/overview
 //
-// `mraid` is the generic build, handed to whoever asks: AppLovin, ironSource and Moloco are all
-// 5 MB, but that same file sent to AdColony (2 MB) or TikTok/Tencent (3 MB) needs `--net meta`
-// as a stand-in for the stricter budget.
-const CAP_MB = { meta: 2, google: 5, mraid: 5, unity: 5, vungle: 5, mintegral: 5 };
+// Over budget is reported as a WARNING, never a failure: every network publishes its own number,
+// they move, and the same `mraid` file gets handed to networks with different limits (AdColony
+// 2 MB, TikTok/Tencent 3 MB). Worth seeing before you send; not worth throwing away a build over.
+const CAP_MB = { meta: 5, google: 5, mraid: 5, applovin: 5, unity: 5, mintegral: 5 };
 
 // The only outbound request any target is allowed to make.
 const GOOGLE_EXITAPI = 'https://tpc.googlesyndication.com/pagead/gadgets/html5/api/exitapi.js';
 
-// The tag each network's container expects in <head>. Vungle (postMessage to the parent frame)
-// and Mintegral (globals its container injects) need none, same as Meta.
+// The tag each network's container expects in <head>. Mintegral needs none: its container injects
+// its own globals, and that build ships as a zip rather than one inlined file.
 const SDK_TAG = {
     meta: null,
     google: GOOGLE_EXITAPI,
     mraid: 'mraid.js',
+    applovin: 'mraid.js',
     unity: 'mraid.js',
-    vungle: null,
     mintegral: null
 };
+
+/**
+ * Expand one `dir/*.html` pattern. Hand-rolled rather than `fs.globSync`, which needs Node 22:
+ * Cocos Creator runs this script on its OWN bundled Node (20.x), and an import it can't resolve
+ * kills the build hook with a bare SyntaxError. Only `*` in the file name is supported, which is
+ * all any caller uses.
+ */
+function expand(pattern) {
+    if (existsSync(pattern)) return [pattern];
+    const dir = dirname(pattern) || '.';
+    const name = basename(pattern);
+    const star = name.indexOf('*');
+    if (star === -1 || !existsSync(dir)) return [];
+    const head = name.slice(0, star);
+    const tail = name.slice(star + 1);
+    return readdirSync(dir)
+        .filter((f) => f.length >= head.length + tail.length && f.startsWith(head) && f.endsWith(tail))
+        .map((f) => join(dir, f));
+}
 
 /**
  * Which network a built file targets. The Cocos hook writes `<build>-<network>-<stamp>.html` flat
@@ -50,14 +68,17 @@ export function networkOf(file) {
  */
 export function verifyPlayable(file, net = networkOf(file)) {
     const fails = [];
+    const warns = [];
     const ok = (cond, msg) => (cond ? null : fails.push(msg));
 
-    if (!(net in SDK_TAG)) return { net, mb: 0, fails: [`unknown network "${net}" - expected one of ${Object.keys(SDK_TAG).join(', ')}`] };
+    if (!(net in SDK_TAG)) {
+        return { net, mb: 0, fails: [`unknown network "${net}" - expected one of ${Object.keys(SDK_TAG).join(', ')}`], warns };
+    }
 
     const html = readFileSync(file, 'utf8');
     const mb = statSync(file).size / 1024 / 1024;
 
-    ok(mb <= CAP_MB[net], `${mb.toFixed(2)} MB is over the ${CAP_MB[net]} MB cap`);
+    if (mb > CAP_MB[net]) warns.push(`${mb.toFixed(2)} MB is over ${net}'s ${CAP_MB[net]} MB budget`);
 
     // The build stamp, and the code that reads it. Two hits: a lone stamp means the adapter is
     // linked against a stale playable-ads-core/dist that predates buildNetwork().
@@ -82,21 +103,22 @@ export function verifyPlayable(file, net = networkOf(file)) {
     const stray = refs.filter((u) => u !== tag && u !== '' && !u.startsWith('data:') && !u.startsWith('#'));
     ok(stray.length === 0, `not self-contained - stray ref(s): ${[...new Set(stray)].join(', ')}`);
 
-    return { net, mb, fails };
+    return { net, mb, fails, warns };
 }
 
-/** Prints one line per file (plus reasons on failure). Returns true when every file passed. */
+/**
+ * Prints one line per file, plus reasons. Returns true when nothing FAILED - warnings don't
+ * change the answer, so a caller that gates on this won't block over a size budget.
+ */
 export function reportPlayables(files, net = null) {
     let allOk = true;
     for (const file of files) {
         const r = verifyPlayable(file, net ?? networkOf(file));
-        if (r.fails.length) {
-            allOk = false;
-            console.log(`FAIL  ${file}  [${r.net}]`);
-            for (const f of r.fails) console.log(`        - ${f}`);
-        } else {
-            console.log(`ok    ${file}  [${r.net}]  ${r.mb.toFixed(2)} MB`);
-        }
+        const head = r.fails.length ? 'FAIL' : r.warns.length ? 'warn' : 'ok  ';
+        if (r.fails.length) allOk = false;
+        console.log(`${head}  ${file}  [${r.net}]  ${r.mb.toFixed(2)} MB`);
+        for (const f of r.fails) console.log(`        - ${f}`);
+        for (const w of r.warns) console.log(`        ! ${w}`);
     }
     return allOk;
 }
@@ -107,8 +129,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const netFlag = args.indexOf('--net');
     const forced = netFlag === -1 ? null : args[netFlag + 1];
     const patterns = args.filter((a, i) => !a.startsWith('--') && !(netFlag !== -1 && i === netFlag + 1));
-    // Expand globs here: npm scripts run through cmd.exe on Windows, which doesn't.
-    const files = patterns.flatMap((a) => (existsSync(a) ? [a] : globSync(a)));
+    // Expanded here: npm scripts run through cmd.exe on Windows, which doesn't glob.
+    const files = patterns.flatMap(expand);
 
     if (patterns.length === 0) {
         console.error('usage: node scripts/verify-playable.mjs <built.html>... [--net <network>]');

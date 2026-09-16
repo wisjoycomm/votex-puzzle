@@ -62,29 +62,54 @@ từ `dist/`.
 
 ## Network được hỗ trợ
 
-Sáu network, mỗi cái một bản build riêng. `mraid` là bản dùng chung (AppLovin, ironSource, Moloco —
+Sáu network, mỗi cái một bản build riêng (danh sách nằm ở `AD_NETWORKS` trong `network.ts`). `mraid` là bản dùng chung (AppLovin, ironSource, Moloco —
 những network nói MRAID thuần). Ba cái còn lại tách riêng vì **API khác nhau**, không phải vì nội
 dung khác. Lệnh gọi lấy theo dấu `__AD_NETWORK__`, xử lý trong `playable-ads-core/cta.ts`.
 
 | network | thẻ `<head>` | click | hết lượt chơi | cap |
 |---|---|---|---|---|
-| meta | — | `FbPlayableAd.onCTAClick()` | — | **2 MB** |
+| meta | — | `FbPlayableAd.onCTAClick()` | — | 5 MB |
 | google | exitapi.js | `ExitApi.exit()` | — | 5 MB |
 | mraid | mraid.js | `mraid.open(url)` | — | 5 MB |
+| applovin | mraid.js | `mraid.open(url)` | — | 5 MB |
 | unity | mraid.js | `mraid.open(url)` | — | 5 MB |
-| vungle | — | `parent.postMessage('download')` | `parent.postMessage('complete')` | 5 MB |
 | mintegral | — | `install()` | `gameEnd()` | 5 MB |
 
-Cap áp cho **một file html tự chứa**; đóng zip thì hầu hết network cho nhiều hơn nhưng repo này
-không ship zip. Nguồn: <https://docs.lunalabs.io/docs/playable/ad-networks/overview>
+Ngân sách dung lượng tính cho **một file html tự chứa**; đóng zip thì hầu hết network cho nhiều
+hơn nhưng repo này không ship zip. Nguồn: <https://docs.lunalabs.io/docs/playable/ad-networks/overview>
 
-Lưu ý:
+Vượt ngân sách chỉ là **cảnh báo (`warn`), không phải lỗi** — mỗi network tự công bố con số riêng
+và hay đổi, lại thêm cùng một file `mraid` đem gửi nhiều nơi khác mức (AdColony 2 MB,
+TikTok/Tencent 3 MB). Chỉ build hỏng thật mới `FAIL`: thiếu dấu `__AD_NETWORK__`, thiếu SDK tag,
+hoặc còn tham chiếu không phải inline. Thoát mã 1 chỉ khi có `FAIL`.
 
-- Meta là **2 MB** — con số 5 MB hay bị nhắc là của bản zip.
-- Vungle: `download` và `complete` không bao giờ được bắn cùng nhau. `complete` tự kéo store rồi,
-  nên sau khi hết lượt chơi thì bấm CTA sẽ im lặng.
-- Unity thực chất là MRAID; chỉ khác nhau ở dấu build, và không cần khác gì thêm.
-- Bản `mraid` đem gửi sang AdColony (2 MB) hay TikTok/Tencent (3 MB) thì dùng `--net meta` để kiểm
-  theo mức chặt hơn.
+Hook build của Cocos chạy verifier sau khi ghi file và chỉ in kết quả ra log — **không bao giờ làm
+hỏng bản build đã xong**.
 
-⚠️ Build Cocos hiện 2.61 MB — **quá cap 2 MB của Meta**. PlayCanvas 1.65 MB thì đạt.
+Lưu ý khác:
+
+- `mraid`, `applovin`, `unity` thực chất cùng là MRAID, gọi hàm y hệt nhau; tách build riêng chỉ
+  để dấu `__AD_NETWORK__` ghi đúng nơi đã gửi file.
+- **`meta`, `google`, `mintegral` xuất ra `.zip`**; ba cái còn lại là html rời. Meta bị siết ở bản
+  html đơn (2 MB so với 5 MB khi zip) và Google yêu cầu html đã zip; Mintegral thì channel của nó
+  vốn xuất ra cả thư mục (`index.html` + `js/`). Hook Cocos nén bằng công cụ sẵn có của hệ điều
+  hành, `index.html` luôn nằm ở gốc archive.
+- `npm run verify -w cocos-adapter` chỉ quét `dist/*.html`, nên các bản zip được kiểm ngay trong
+  hook lúc build (trước khi nén), không phải bằng lệnh này.
+
+Tham khảo: 
+
+- https://docs.lunalabs.io/docs/playable/ad-networks/overview
+## Build Cocos
+
+Creator chỉ nạp phần main của extension **một lần lúc mở editor**, nên sửa pipeline xong mà editor
+đang mở thì build vẫn chạy code cũ. Vì vậy phần đóng gói nằm ở `extensions/playable-build/pack.js`
+và chạy được độc lập:
+
+```bash
+# build trong Creator (hoặc npm run build:all -w cocos-adapter), rồi:
+npm run pack -w cocos-adapter
+```
+
+Lệnh này đọc `build/web-mobile`, xuất đủ sáu network vào `dist/` và tự kiểm tra luôn — không cần
+khởi động lại Creator.

@@ -4,7 +4,7 @@
     "name": "playable-build",
     "title": "Playable Build",
     "description": "Turns the web-mobile build into one self-contained index.html per ad network.",
-    "author": "votex-puzzle",
+    "author": "wisjoy",
     "main": "./builder.js",
     "editor": ">=3.8.0",
     "contributions": {

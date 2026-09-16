@@ -2,12 +2,12 @@
 // No engine import here by design — window/document/navigator only.
 
 /**
- * The networks this game builds for. `mraid` is the generic one — AppLovin, ironSource, Moloco and
- * anything else that speaks plain MRAID. Unity, Vungle and Mintegral get their own build because
- * their click and end-of-run APIs differ: Unity is MRAID, Vungle talks over `postMessage` to the
- * parent frame, Mintegral calls globals its container injects.
+ * The networks this game builds for. `mraid` is the generic one — ironSource, Moloco and anything
+ * else that speaks plain MRAID. AppLovin and Unity are MRAID too and take the same calls; they get
+ * their own build only so the stamp names the network the file was sent to. Mintegral is the one
+ * that differs: its container injects its own globals, and it ships as a zip.
  */
-export const AD_NETWORKS = ["meta", "google", "mraid", "unity", "vungle", "mintegral"] as const;
+export const AD_NETWORKS = ["meta", "google", "mraid", "applovin", "unity", "mintegral"] as const;
 
 export type AdNetwork = (typeof AD_NETWORKS)[number] | "none";
 
@@ -67,7 +67,6 @@ export function detectNetwork(): AdNetwork {
     // Unity is MRAID on the wire, so a probe can't tell the two apart - only the stamp can, and
     // it doesn't matter: they take the same call.
     if (mraid()) return "mraid";
-    // Vungle injects nothing to probe for. Its build is the only way to know, so no branch here.
     return "none";
 }
 
