@@ -1,7 +1,7 @@
-import { EffectAsset, Mesh, MeshRenderer, Node, Vec3 } from 'cc';
-import type { LevelDef, V3 } from 'core';
+import { EffectAsset, Mesh, MeshRenderer, Node, Vec3 } from "cc";
+import type { LevelDef, V3 } from "core";
 
-import { materialFor } from './colors';
+import { materialFor } from "./colors";
 
 export type Sculpture = {
     root: Node;
@@ -23,8 +23,16 @@ export function cellKey(p: V3): string {
 
 /** Grid coordinate -> position inside `root`. Local, not world: `root` rotates under the drag
  *  rig, so anything following a path has to be re-transformed each frame rather than baked once. */
-export function gridToLocal(sculpture: Sculpture, p: V3, out = new Vec3()): Vec3 {
-    return out.set(p.x - sculpture.center.x, p.y - sculpture.center.y, p.z - sculpture.center.z);
+export function gridToLocal(
+    sculpture: Sculpture,
+    p: V3,
+    out = new Vec3(),
+): Vec3 {
+    return out.set(
+        p.x - sculpture.center.x,
+        p.y - sculpture.center.y,
+        p.z - sculpture.center.z,
+    );
 }
 
 /**
@@ -41,7 +49,7 @@ function scaleToUnitCube(mesh: Mesh): number {
     if (!min || !max) {
         // ponytail: older meshes may not carry bounds; 1 renders wrong but visibly so, which beats
         // guessing a factor. Set it by hand here if an asset ever lands without them.
-        console.warn('[sculpture] mesh has no bounds; falling back to scale 1');
+        console.warn("[sculpture] mesh has no bounds; falling back to scale 1");
         return 1;
     }
     const size = Math.max(max.x - min.x, max.y - min.y, max.z - min.z);
@@ -56,12 +64,16 @@ export function buildSculpture(
     parent: Node,
     level: LevelDef,
     mesh: Mesh,
-    effect: EffectAsset
+    effect: EffectAsset,
 ): Sculpture {
     const { nx, ny } = level.size;
 
-    let minX = Infinity, minY = Infinity, minZ = Infinity;
-    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    let minX = Infinity,
+        minY = Infinity,
+        minZ = Infinity;
+    let maxX = -Infinity,
+        maxY = -Infinity,
+        maxZ = -Infinity;
     const populated: { pos: V3; color: number }[] = [];
 
     level.cells.forEach((color, i) => {
@@ -69,19 +81,22 @@ export function buildSculpture(
         const pos: V3 = {
             x: i % nx,
             y: Math.floor(i / nx) % ny,
-            z: Math.floor(i / (nx * ny))
+            z: Math.floor(i / (nx * ny)),
         };
         populated.push({ pos, color });
-        minX = Math.min(minX, pos.x); maxX = Math.max(maxX, pos.x);
-        minY = Math.min(minY, pos.y); maxY = Math.max(maxY, pos.y);
-        minZ = Math.min(minZ, pos.z); maxZ = Math.max(maxZ, pos.z);
+        minX = Math.min(minX, pos.x);
+        maxX = Math.max(maxX, pos.x);
+        minY = Math.min(minY, pos.y);
+        maxY = Math.max(maxY, pos.y);
+        minZ = Math.min(minZ, pos.z);
+        maxZ = Math.max(maxZ, pos.z);
     });
 
     const cx = (minX + maxX) / 2;
     const cy = (minY + maxY) / 2;
     const cz = (minZ + maxZ) / 2;
 
-    const root = new Node('sculptureRoot');
+    const root = new Node("sculptureRoot");
     parent.addChild(root);
 
     const cubeScale = scaleToUnitCube(mesh);
@@ -112,7 +127,14 @@ export function buildSculpture(
     }
 
     const radius = Math.hypot(maxX - minX, maxY - minY, maxZ - minZ) / 2;
-    return { root, cubes, radius, mesh, center: { x: cx, y: cy, z: cz }, cubeScale };
+    return {
+        root,
+        cubes,
+        radius,
+        mesh,
+        center: { x: cx, y: cy, z: cz },
+        cubeScale,
+    };
 }
 
 export function destroyCube(sculpture: Sculpture, cell: V3): void {

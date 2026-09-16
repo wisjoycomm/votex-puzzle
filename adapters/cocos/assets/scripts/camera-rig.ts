@@ -1,5 +1,15 @@
-import { EventMouse, EventTouch, Input, Node, Quat, Vec3, input, math } from 'cc';
-import type { V3 } from 'core';
+import {
+    EventMouse,
+    EventTouch,
+    Input,
+    Node,
+    Quat,
+    Vec2,
+    Vec3,
+    input,
+    math,
+} from "cc";
+import type { V3 } from "core";
 
 const DRAG_SPEED = 0.3; // degrees per pixel
 const WHEEL_SPEED = 0.3; // degrees per wheel-delta unit
@@ -21,10 +31,15 @@ function lerpAngle(from: number, to: number, t: number): number {
     return from + delta * t;
 }
 
-// ponytail: no UI hit-test yet, because there is no UI yet. Phase F must add one — a global
-// `input` listener fires even when the touch landed on a Button, so without it every tap on a
-// hive icon will also spin the sculpture.
-export function createCameraRig(root: Node, camera: Node, initialRotation?: V3): CameraRig {
+export function createCameraRig(
+    root: Node,
+    camera: Node,
+    /** Whether a UI-space point lands on the HUD. `input` listeners are global and fire even when
+     *  the touch was consumed by a UI node, so without this a tap on a hive icon also starts a
+     *  drag and the sculpture lurches every time the player fires a lane. */
+    hitsUi: (point: Vec2) => boolean,
+    initialRotation?: V3,
+): CameraRig {
     // The level's DefaultRotation: the angle its author wants the sculpture first seen at. Only
     // x (pitch) and y (yaw) are used — the rig has no roll, deliberately.
     //
@@ -36,7 +51,7 @@ export function createCameraRig(root: Node, camera: Node, initialRotation?: V3):
     // return to.
     const startPitch = Math.max(
         -PITCH_LIMIT,
-        Math.min(PITCH_LIMIT, -(initialRotation?.x ?? 0))
+        Math.min(PITCH_LIMIT, -(initialRotation?.x ?? 0)),
     );
     const startYaw = -(initialRotation?.y ?? 0);
 
@@ -48,7 +63,8 @@ export function createCameraRig(root: Node, camera: Node, initialRotation?: V3):
     let pitch = startPitch;
     let dragging = false;
 
-    const onTouchStart = (): void => {
+    const onTouchStart = (event: EventTouch): void => {
+        if (hitsUi(event.getUILocation())) return;
         dragging = true;
     };
 
@@ -60,7 +76,7 @@ export function createCameraRig(root: Node, camera: Node, initialRotation?: V3):
         targetYaw += delta.x * DRAG_SPEED;
         targetPitch = Math.max(
             -PITCH_LIMIT,
-            Math.min(PITCH_LIMIT, targetPitch + delta.y * DRAG_SPEED)
+            Math.min(PITCH_LIMIT, targetPitch + delta.y * DRAG_SPEED),
         );
     };
 

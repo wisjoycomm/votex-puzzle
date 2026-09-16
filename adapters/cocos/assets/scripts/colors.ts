@@ -1,41 +1,41 @@
-import { Color, EffectAsset, Material } from 'cc';
+import { Color, EffectAsset, Material } from "cc";
 
 // BoxyBlast GameColor enum -> fallback tint hex (see .scratch/docs/BoxyBlast_Cube_Colors.pdf).
 // Indices 14 and 17 are intentionally unused upstream.
 const PALETTE: Record<number, string> = {
-    0: '#7A1428',
-    1: '#CC3333',
-    2: '#D47F7F',
-    3: '#8B2255',
-    4: '#CC2288',
-    5: '#FF55AA',
-    6: '#FF88CC',
-    7: '#441888',
-    8: '#8844BB',
-    9: '#6644FF',
-    10: '#AA88EE',
-    11: '#11205A',
-    12: '#1212E6',
-    13: '#2299EE',
-    15: '#118866',
-    16: '#19D4E6',
-    18: '#147914',
-    19: '#778833',
-    20: '#0FBE0F',
-    21: '#DD9900',
-    22: '#FFDD00',
-    23: '#EE7722',
-    24: '#FFAA77',
-    25: '#442211',
-    26: '#85351B',
-    27: '#BB8833',
-    28: '#313131',
-    29: '#EEEEEE',
-    30: '#6C6C7B'
+    0: "#7A1428",
+    1: "#CC3333",
+    2: "#D47F7F",
+    3: "#8B2255",
+    4: "#CC2288",
+    5: "#FF55AA",
+    6: "#FF88CC",
+    7: "#441888",
+    8: "#8844BB",
+    9: "#6644FF",
+    10: "#AA88EE",
+    11: "#11205A",
+    12: "#1212E6",
+    13: "#2299EE",
+    15: "#118866",
+    16: "#19D4E6",
+    18: "#147914",
+    19: "#778833",
+    20: "#0FBE0F",
+    21: "#DD9900",
+    22: "#FFDD00",
+    23: "#EE7722",
+    24: "#FFAA77",
+    25: "#442211",
+    26: "#85351B",
+    27: "#BB8833",
+    28: "#313131",
+    29: "#EEEEEE",
+    30: "#6C6C7B",
 };
 
 // Loud, obviously-wrong color for any index the palette above doesn't cover.
-const FALLBACK_HEX = '#FF00FF';
+const FALLBACK_HEX = "#FF00FF";
 
 // TCP2 ramp mode: 0 Default | 1 Crisp | 2 Bands | 3 Bands Crisp | 4 Texture. Bands is the look
 // the PlayCanvas adapter approximated by hand in toon-shader.ts.
@@ -66,12 +66,23 @@ export function materialFor(color: number, effect: EffectAsset): Material {
         technique: 0, // "opaque"
         defines: {
             RAMP_TYPE: RAMP_TYPE_BANDS,
-            USE_INSTANCING: true
-        }
+            USE_INSTANCING: true,
+        },
     });
-    material.setProperty('mainColor', hexToColor(PALETTE[color] ?? FALLBACK_HEX));
-    material.setProperty('rampBands', RAMP_BANDS);
-    material.setProperty('shadowColor', new Color(255 * SHADOW_LEVEL, 255 * SHADOW_LEVEL, 255 * SHADOW_LEVEL, 255));
+    material.setProperty(
+        "mainColor",
+        hexToColor(PALETTE[color] ?? FALLBACK_HEX),
+    );
+    material.setProperty("rampBands", RAMP_BANDS);
+    material.setProperty(
+        "shadowColor",
+        new Color(
+            255 * SHADOW_LEVEL,
+            255 * SHADOW_LEVEL,
+            255 * SHADOW_LEVEL,
+            255,
+        ),
+    );
 
     materials.set(color, material);
     return material;
