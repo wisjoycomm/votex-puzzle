@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { deflateSync } from 'node:zlib';
 
 import { defineConfig } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
@@ -42,6 +43,58 @@ const NETWORKS = ['meta', 'google', 'mraid', 'applovin', 'unity', 'mintegral'];
 // so a given network gets the same package shape whichever engine built it.
 const ZIPPED = new Set(['meta', 'google', 'mintegral']);
 
+// The bundle text ships deflated for the networks that take a LOOSE html - nothing compresses that
+// file on the way out, so the ~1.3 MB of js is carried raw otherwise: 2,013,396 -> 1,050,680 bytes.
+// The zipped three are left uncompressed on purpose, because the zip already does it: deflating
+// first lands at 793,848 bytes against 785,586, so it buys a slightly bigger archive plus 4.5 KB of
+// inflater and the boot cost of running it. Assets ride along inside the chunk either way - they
+// are png/webp/mp3 already, and the only thing deflate takes back off them is base64's own 33%.
+const compressed = (mode: string) => NETWORKS.includes(mode) && !ZIPPED.has(mode);
+
+/**
+ * The inflate half of that, as a standalone IIFE to inline ahead of the payload. Tree-shaken out of
+ * fflate rather than inlining its 33 KB umd build: all we need is `unzlibSync`, which comes to
+ * 4.5 KB. Not `DecompressionStream`, which is Safari 16.4+ - an older WebView would render the
+ * creative blank with no way back. Bundled with rolldown, which vite 8 brings with it; esbuild is
+ * NOT installed any more, so importing it here fails the build.
+ */
+async function inflater() {
+    const { rolldown } = await import('rolldown');
+    const ENTRY = '\0gz';
+    const bundle = await rolldown({
+        input: ENTRY,
+        plugins: [
+            {
+                name: 'gz-entry',
+                resolveId: (id: string) => (id === ENTRY ? id : null),
+                load: (id: string) =>
+                    id === ENTRY
+                        ? "import{unzlibSync,strFromU8}from'fflate';window.__gz__=(b)=>strFromU8(unzlibSync(b));"
+                        : null
+            }
+        ]
+    });
+    const { output } = await bundle.generate({ format: 'iife', minify: true });
+    return output[0].code;
+}
+
+/**
+ * The payload, and the six lines that run it. Injected as an inline <script> element rather than
+ * eval'd or fetched from a blob: url - it needs no CSP allowance the rest of this all-inline file
+ * doesn't already need, and it executes synchronously on append, so the wrapped bundle sees the
+ * same document state it would have seen as a plain tag.
+ */
+const loader = (js: string, inflate: string) => {
+    const b64 = deflateSync(Buffer.from(js, 'utf8'), { level: 9 }).toString('base64');
+    return (
+        `<script>${inflate}</script>` +
+        `<script>(function(){var b=atob("${b64}"),n=b.length,u=new Uint8Array(n);` +
+        `for(var i=0;i<n;i++)u[i]=b.charCodeAt(i);` +
+        `var s=document.createElement("script");s.textContent=window.__gz__(u);` +
+        `document.head.appendChild(s)})();</script>`
+    );
+};
+
 export default defineConfig(({ mode }) => ({
     // .glb isn't a built-in Vite asset type, so `?inline` would hit the filesystem loader.
     assetsInclude: ['**/*.glb'],
@@ -69,9 +122,10 @@ export default defineConfig(({ mode }) => ({
             // so the script tag this rewrites only exists once the file is on disk. Must stay
             // ahead of playable-file-name, which renames that file out from under it.
             name: 'classic-script',
-            closeBundle() {
+            async closeBundle() {
                 const html = join(import.meta.dirname, NETWORKS.includes(mode) ? 'dist' : `dist/${mode}`, 'index.html');
                 const src = readFileSync(html, 'utf8');
+                const inflate = compressed(mode) ? await inflater() : '';
 
                 // PlayCanvas' WebGPU path carries import.meta, which is a SYNTAX error outside a
                 // module - it would kill the whole bundle at parse time, reachable or not. It
@@ -80,15 +134,18 @@ export default defineConfig(({ mode }) => ({
                 const out = src
                     .replace(
                         /<script type="module" crossorigin>([\s\S]*?)<\/script>/,
-                        (_match, code: string) =>
+                        (_match, code: string) => {
                             // The readyState wait is not optional: a module script is deferred, a
-                        // classic one is not, and vite puts the tag in <head>. Without it the
-                        // bundle runs before <body> exists and getElementById('application-canvas')
-                        // hands createGraphicsDevice a null canvas.
-                        `<script>(async()=>{"use strict";` +
-                        `if(document.readyState==="loading")` +
-                        `await new Promise(r=>document.addEventListener("DOMContentLoaded",r,{once:true}));\n` +
-                        `${code.replaceAll('import.meta', '({url:location.href})')}\n})();</script>`
+                            // classic one is not, and vite puts the tag in <head>. Without it the
+                            // bundle runs before <body> exists and getElementById('application-canvas')
+                            // hands createGraphicsDevice a null canvas.
+                            const js =
+                                `(async()=>{"use strict";` +
+                                `if(document.readyState==="loading")` +
+                                `await new Promise(r=>document.addEventListener("DOMContentLoaded",r,{once:true}));\n` +
+                                `${code.replaceAll('import.meta', '({url:location.href})')}\n})();`;
+                            return inflate ? loader(js, inflate) : `<script>${js}</script>`;
+                        }
                     )
                     // singlefile inlines the css as `<style rel="stylesheet" crossorigin>`. Nothing
                     // is fetched, but the checkers grep for the word, not for a real cross-origin
@@ -145,6 +202,9 @@ export default defineConfig(({ mode }) => ({
         // Flat builds share dist/, so emptying it would delete the other two networks.
         emptyOutDir: !NETWORKS.includes(mode),
         assetsInlineLimit: Number.MAX_SAFE_INTEGER,
+        // No `minify` override: vite 8 minifies with rolldown's oxc by default, and it wins here.
+        // Measured on `build:mraid`, terser at compress.passes 2 + mangle.toplevel came out 6 KB
+        // BIGGER (1,056,848 vs 1,050,680 bytes) and cost 3.7s of build time. Don't re-add it.
         // No `target` override: main.ts uses top-level await, which needs ES2022.
         chunkSizeWarningLimit: 4096
     }

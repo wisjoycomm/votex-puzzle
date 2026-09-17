@@ -55,6 +55,18 @@ const stamp = () => new Date().toLocaleString('sv-SE').replace(/[-:]/g, '').repl
 // rather than just that one: underscores are legal everywhere, so one rule beats a special case.
 const safeName = (s) => s.replace(/[^A-Za-z0-9_]/g, '_');
 
+// playable-adapter-core injects its JSZip UMD bundle twice into every channel - two byte-identical
+// 44 KB copies, in every network's output. Running it twice only re-assigns window.JSZip, so the
+// duplicate buys nothing and costs 44 KB of a budget-bound file. Keep the first, drop the rest.
+const dropDuplicateJszip = (html) => {
+    let kept = false;
+    return html.replace(/<script data-id="jszip">[\s\S]*?<\/script>/g, (tag) => {
+        if (kept) return '';
+        kept = true;
+        return tag;
+    });
+};
+
 /**
  * @param {object} [opts]
  * @param {string} [opts.buildDir]  the folder holding web-mobile/ (default: <adapter>/build)
@@ -100,7 +112,9 @@ async function pack(opts) {
         // Stamp the target network so playable-ads-core's buildNetwork() can report it. Done
         // here rather than via the adapter's injectOptions, which doesn't reach every channel.
         const withStamp = (html) =>
-            html.replace('</head>', `<script>window.__AD_NETWORK__="${network}";</script></head>`);
+            dropDuplicateJszip(
+                html.replace('</head>', `<script>window.__AD_NETWORK__="${network}";</script></head>`)
+            );
 
         let dest;
         if (existsSync(asFile) && ZIPPED.has(network)) {

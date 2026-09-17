@@ -83,11 +83,13 @@ export function verifyPlayable(file, net = networkOf(file)) {
     // The build stamp, and the code that reads it. Two hits: a lone stamp means the adapter is
     // linked against a stale playable-ads-core/dist that predates buildNetwork().
     ok(html.includes(`window.__AD_NETWORK__="${net}"`), `no build stamp for "${net}"`);
-    // Cocos is exempt: playable-adapter-core deflates every script into a base64
-    // `window.__adapter_zip__` blob, so no bundle text is greppable and the read can't be seen.
+    // A build whose bundle ships deflated is exempt: the read is inside the compressed blob, so
+    // there is no bundle text to grep. Cocos does this for every script via playable-adapter-core's
+    // `window.__adapter_zip__`; the PlayCanvas loose-html builds deflate their one chunk behind
+    // `window.__gz__`. Either marker means "can't see it from here", not "it isn't there".
     const hits = html.split('__AD_NETWORK__').length - 1;
-    const zipped = html.includes('__adapter_zip__');
-    ok(zipped || hits >= 2, `stamp present but nothing reads it (${hits} hit) - rebuild playable-ads-core`);
+    const deflated = html.includes('__adapter_zip__') || html.includes('__gz__');
+    ok(deflated || hits >= 2, `stamp present but nothing reads it (${hits} hit) - rebuild playable-ads-core`);
 
     // The network's own SDK tag.
     const tag = SDK_TAG[net];
