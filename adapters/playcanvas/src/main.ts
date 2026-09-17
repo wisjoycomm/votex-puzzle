@@ -202,6 +202,7 @@ app.on('update', (dt: number) => {
     hud.refresh(frame.state);
     // After refresh: fitBoard() runs in there. Reframing every frame rather than off the resize
     // poll — the camera depends on the board, so it can't be a frame behind it.
+    backdrop.fit();
     backdrop.setGroundHeight(hud.getBandSplit());
     boardFraction = hud.getBoardFraction();
     frameCamera();

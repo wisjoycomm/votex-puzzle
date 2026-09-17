@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, renameSync, rmSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { defineConfig } from 'vite';
@@ -56,6 +56,46 @@ export default defineConfig(({ mode }) => ({
                 const stamp = NETWORKS.includes(mode) ? `<script>window.__AD_NETWORK__="${mode}";</script>` : '';
                 const tag = sdk + stamp;
                 return tag ? html.replace('</head>', `    ${tag}\n    </head>`) : html;
+            }
+        },
+        {
+            // Networks open the creative off file:// or out of a local container, and reject a
+            // module script there: "Do not use crossorigin, type=module, import or export in local
+            // files". After viteSingleFile there is one self-contained chunk with no import or
+            // export statement left in it, so all `type="module"` still buys is top-level await -
+            // an async IIFE gives that back, in a tag every network accepts.
+            //
+            // Runs in closeBundle, not transformIndexHtml: singlefile inlines at generateBundle,
+            // so the script tag this rewrites only exists once the file is on disk. Must stay
+            // ahead of playable-file-name, which renames that file out from under it.
+            name: 'classic-script',
+            closeBundle() {
+                const html = join(import.meta.dirname, NETWORKS.includes(mode) ? 'dist' : `dist/${mode}`, 'index.html');
+                const src = readFileSync(html, 'utf8');
+
+                // PlayCanvas' WebGPU path carries import.meta, which is a SYNTAX error outside a
+                // module - it would kill the whole bundle at parse time, reachable or not. It
+                // isn't reachable: createGraphicsDevice's deviceTypes defaults to [] and only ever
+                // adds webgl2 and null, so WebGPU is never attempted unless asked for by name.
+                const out = src
+                    .replace(
+                        /<script type="module" crossorigin>([\s\S]*?)<\/script>/,
+                        (_match, code: string) =>
+                            // The readyState wait is not optional: a module script is deferred, a
+                        // classic one is not, and vite puts the tag in <head>. Without it the
+                        // bundle runs before <body> exists and getElementById('application-canvas')
+                        // hands createGraphicsDevice a null canvas.
+                        `<script>(async()=>{"use strict";` +
+                        `if(document.readyState==="loading")` +
+                        `await new Promise(r=>document.addEventListener("DOMContentLoaded",r,{once:true}));\n` +
+                        `${code.replaceAll('import.meta', '({url:location.href})')}\n})();</script>`
+                    )
+                    // singlefile inlines the css as `<style rel="stylesheet" crossorigin>`. Nothing
+                    // is fetched, but the checkers grep for the word, not for a real cross-origin
+                    // load, so an inline tag carrying it fails the same way a real one would.
+                    .replace(/<style rel="stylesheet" crossorigin>/g, '<style>');
+                if (out === src) throw new Error('classic-script: no module script tag to rewrite');
+                writeFileSync(html, out);
             }
         },
         {

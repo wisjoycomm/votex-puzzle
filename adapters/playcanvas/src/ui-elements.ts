@@ -87,7 +87,12 @@ export function makeFullScreenGroup(name: string): Entity {
     el.addComponent('element', {
         type: ELEMENTTYPE_GROUP,
         anchor: [0, 0, 1, 1],
-        pivot: [0.5, 0.5]
+        pivot: [0.5, 0.5],
+        // Explicit, and the whole point of this factory: on a split anchor the rect comes from the
+        // margins, and leaving them out lets the element's default 32x32 size set them instead —
+        // which made this group 31px WIDER than the screen, so everything anchored to its centre
+        // (the board, both end-screen overlays) sat 15.5px right of the real centre.
+        margin: [0, 0, 0, 0]
     });
     return el;
 }

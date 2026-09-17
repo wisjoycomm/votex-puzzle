@@ -1,5 +1,5 @@
-import { Asset, ELEMENTTYPE_IMAGE, Entity, Layer, SCALEMODE_NONE, Vec4 } from 'playcanvas';
-import type { AppBase, CameraComponent } from 'playcanvas';
+import { ADDRESS_CLAMP_TO_EDGE, Asset, ELEMENTTYPE_IMAGE, Entity, Layer, SCALEMODE_NONE, Vec4 } from 'playcanvas';
+import type { AppBase, CameraComponent, Texture } from 'playcanvas';
 
 // `?inline` = base64 data URI, so the playable stays one file. WebP via `npm run to-webp`.
 import BACKGROUND_URL from './assets/sprites/Dark BG 01.webp?inline';
@@ -16,11 +16,21 @@ import { loadAsset } from './ui-elements.ts';
 //     gradient -> canopy -> hive BACK  |  world (sculpture, bees)  |  hive FRONT -> HUD
 //     \_________ own layer, before the world _________/            \__ default UI layer __/
 
-// Native pixel sizes — the art is never stretched.
-const CANOPY_WIDTH = 936;
+// Native pixel sizes. The hive keeps its aspect at any size; the canopy spans the full width
+// instead, so a slot wider than CANOPY_WIDTH doesn't show bare sky in the top corners.
 const CANOPY_HEIGHT = 302;
 const HIVE_WIDTH = 262;
 const HIVE_HEIGHT = 199;
+
+/**
+ * Share of the viewport height the canopy may claim. Raising it makes the tree read bigger;
+ * lowering it leaves more room for the sculpture on a short slot.
+ *
+ * Deliberately no `Math.min(1, …)` clamp: pinning to native px would make the backdrop a fixed
+ * DEVICE-pixel size, so it would render at half the intended share on a DPR-2 phone. Mild
+ * upscaling of the art beats a backdrop that's a different size on every device.
+ */
+const CANOPY_MAX_HEIGHT_FRACTION = 0.18;
 
 /** How far below the top edge the hive hangs. */
 const HIVE_TOP_OFFSET = 0;
@@ -42,6 +52,8 @@ export type Backdrop = {
     entranceScreenPos(): { x: number; y: number };
     /** Where the two bands meet, in screen units from the bottom. Tracks the HUD, so not constant. */
     setGroundHeight(height: number): void;
+    /** Rescale canopy and hive to the current viewport. Call every frame, like the HUD's fitBoard. */
+    fit(): void;
 };
 
 export async function createBackdrop(app: AppBase, camera: Entity): Promise<Backdrop> {
@@ -51,6 +63,15 @@ export async function createBackdrop(app: AppBase, camera: Entity): Promise<Back
         loadAsset(app, new Asset('hive-back', 'texture', { url: HIVE_BACK_URL })),
         loadAsset(app, new Asset('hive-front', 'texture', { url: HIVE_FRONT_URL }))
     ]);
+
+    // fit() draws these below their native size, and PlayCanvas textures default to REPEAT — which
+    // blends the opaque top row back into the transparent bottom edge as a 1px line drawn across
+    // the art. Only visible once something is minified, which is exactly what fit() does.
+    for (const asset of [background, canopy, hiveBack, hiveFront]) {
+        const texture = asset.resource as Texture;
+        texture.addressU = ADDRESS_CLAMP_TO_EDGE;
+        texture.addressV = ADDRESS_CLAMP_TO_EDGE;
+    }
 
     // A layer before the world. The camera must be told to render it, or nothing shows.
     const backdropLayer = new Layer({ name: 'Backdrop' });
@@ -66,12 +87,13 @@ export async function createBackdrop(app: AppBase, camera: Entity): Promise<Back
     front.addComponent('screen', { scaleMode: SCALEMODE_NONE, screenSpace: true });
     app.root.addChild(front);
 
-    // Top-centre anchor + top pivot: hangs from the top edge at its own size, centred at any width.
+    // Top pivot: hangs from the top edge. `w` null spans the full width off the anchor instead of
+    // a fixed size — what the canopy wants, where the hive wants its own aspect kept.
     function addTopCentre(
         parent: Entity,
         name: string,
         texture: Asset,
-        w: number,
+        w: number | null,
         h: number,
         y: number,
         layer?: Layer
@@ -79,14 +101,16 @@ export async function createBackdrop(app: AppBase, camera: Entity): Promise<Back
         const el = new Entity(name);
         el.addComponent('element', {
             type: ELEMENTTYPE_IMAGE,
-            anchor: [0.5, 1, 0.5, 1],
+            anchor: w === null ? [0, 1, 1, 1] : [0.5, 1, 0.5, 1],
             pivot: [0.5, 1],
-            width: w,
+            ...(w === null ? {} : { width: w }),
             height: h,
             textureAsset: texture.id,
             ...(layer ? { layers: [layer.id] } : {})
         });
-        el.setLocalPosition(0, y, 0);
+        // Not on a split anchor: position and margins are the same field there, so setting one
+        // collapses the width the anchor was supposed to drive. The full-width case wants y 0.
+        if (w !== null) el.setLocalPosition(0, y, 0);
         parent.addChild(el);
         return el;
     }
@@ -128,11 +152,36 @@ export async function createBackdrop(app: AppBase, camera: Entity): Promise<Back
     }
 
     // Sibling order is draw order within a layer: canopy, then the hive's back shell over it.
-    addTopCentre(behind, 'canopy', canopy, CANOPY_WIDTH, CANOPY_HEIGHT, 0, backdropLayer);
+    const leaves = addTopCentre(behind, 'canopy', canopy, null, CANOPY_HEIGHT, 0, backdropLayer);
     const back = addTopCentre(behind, 'hive-back', hiveBack, HIVE_WIDTH, HIVE_HEIGHT, -HIVE_TOP_OFFSET, backdropLayer);
 
     // Front shell on the default UI layer, so it draws over a bee at the entrance.
-    addTopCentre(front, 'hive-front', hiveFront, HIVE_WIDTH, HIVE_HEIGHT, -HIVE_TOP_OFFSET);
+    const frontHive = addTopCentre(front, 'hive-front', hiveFront, HIVE_WIDTH, HIVE_HEIGHT, -HIVE_TOP_OFFSET);
+
+    /**
+     * The canopy and hive are authored at one pixel size, which is only the right size on one
+     * viewport — at 936x302 they eat 70% of a landscape slot's height, leaving the sculpture and
+     * the board fighting over what's left. Scale both to the viewport instead, off one factor so
+     * the hive stays hanging in the canopy's notch.
+     *
+     * Run every frame rather than off a resize event, for the reasons hud.ts:fitBoard gives: no
+     * listener to fall out of sync, and it covers DPR changes and a fill-mode resize settling.
+     */
+    let fitScale = -1;
+
+    function fit(): void {
+        // Device pixels, same source fitBoard() reads — SCALEMODE_NONE screens don't scale.
+        const next = (behind.screen!.resolution.y * CANOPY_MAX_HEIGHT_FRACTION) / CANOPY_HEIGHT;
+        // Called every frame; both setters rebuild a mesh, so only on a change.
+        if (fitScale === next) return;
+        fitScale = next;
+        leaves.element!.height = CANOPY_HEIGHT * next;
+        // Uniform, not width/height: leaves stretch invisibly, a hive reads as broken.
+        back.setLocalScale(next, next, next);
+        frontHive.setLocalScale(next, next, next);
+    }
+
+    fit();
 
     function entranceScreenPos(): { x: number; y: number } {
         // canvasCorners are CSS px. min/max rather than fixed indices, since order isn't promised.
@@ -147,11 +196,12 @@ export async function createBackdrop(app: AppBase, camera: Entity): Promise<Back
         };
     }
 
-    // Canvas y grows downward, so "below the hive" is a positive offset.
+    // Canvas y grows downward, so "below the hive" is a positive offset. Scaled with the hive:
+    // a fixed drop below a hive shrunk to a third of its size is a huge detour.
     function approachScreenPos(): { x: number; y: number } {
         const entrance = entranceScreenPos();
-        return { x: entrance.x, y: entrance.y + APPROACH_DROP };
+        return { x: entrance.x, y: entrance.y + APPROACH_DROP * fitScale };
     }
 
-    return { approachScreenPos, entranceScreenPos, setGroundHeight };
+    return { approachScreenPos, entranceScreenPos, setGroundHeight, fit };
 }
