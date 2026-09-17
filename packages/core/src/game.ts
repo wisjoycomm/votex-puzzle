@@ -109,25 +109,22 @@ export class GameCore {
             return;
         }
 
-        // Only colors currently loaded into a firing slot can be "stuck" — a color
-        // still waiting in a column hasn't been exposed yet and may become reachable
-        // once other slots clear cubes in front of it.
-        const activeColors = new Set<number>();
+        // Lost only when the position is frozen. A single stuck slot isn't that: reachability is
+        // read off the *current* grid, so a color buried under a shell is unreachable until the
+        // shell comes off — which another slot may still be doing.
         for (const s of this.slots) {
             const color = s?.color();
-            if (color !== null && color !== undefined) activeColors.add(color);
+            if (color !== null && color !== undefined && this.grid.anyReachableEver(color))
+                return; // this slot can still shoot
         }
 
-        for (const color of activeColors) {
-            const cells = this.grid.cellsOfColor(color);
-            if (cells.length === 0) continue;
-            const stuck = cells.every((p) => !this.grid.reachableEver(p));
-            if (stuck) {
-                this.status = "lost";
-                this.pending.push({ t: "gameLost", at: this.time });
-                return;
-            }
-        }
+        // Every loaded hive is stuck — but a free slot with a hive left to put in it means the
+        // player simply hasn't loaded it yet. Without this, frame 1 of a level (no slots loaded,
+        // so the loop above passes vacuously) would be an instant loss.
+        if (this.slots.includes(null) && this.columns.some((c) => !c.isEmpty())) return;
+
+        this.status = "lost";
+        this.pending.push({ t: "gameLost", at: this.time });
     }
 
     setViewDirection(dir: V3): void {

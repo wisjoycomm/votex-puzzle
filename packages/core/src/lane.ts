@@ -25,6 +25,10 @@ export class LaneQueue {
         return this.items.splice(index, 1)[0];
     }
 
+    isEmpty(): boolean {
+        return this.items.length === 0;
+    }
+
     snapshot(): HiveDef[] {
         return this.items.slice();
     }
@@ -61,6 +65,15 @@ export class Shooter {
 
         const target = grid.findTarget(this.hive.color, viewDir);
         if (!target) {
+            // Two very different reasons to have no target. Extinct color: nothing can ever bring
+            // it back, so retiring the hive frees the slot instead of clogging it for the rest of
+            // the run. Merely buried: another slot peeling the shell may expose it, so wait.
+            if (!grid.hasColor(this.hive.color)) {
+                events.push({ t: "laneDepleted", slot, at: time });
+                this.hive = null;
+                this.timer = 0;
+                return;
+            }
             this.timer = RETRY_INTERVAL;
             return;
         }

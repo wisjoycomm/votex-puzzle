@@ -172,6 +172,12 @@ export class VotexGrid {
         return this.remaining === 0;
     }
 
+    /** Are there any cubes of this color left at all? A shooter whose color is extinct can never
+     *  fire again, however the sculpture is peeled or rotated. */
+    hasColor(color: number): boolean {
+        return (this.byColor.get(color)?.size ?? 0) > 0;
+    }
+
     cellsOfColor(color: number): V3[] {
         const set = this.byColor.get(color);
         if (!set) return [];
@@ -284,6 +290,16 @@ export class VotexGrid {
     reachableEver(origin: V3): boolean {
         this.ensureEver();
         return this.everReach[this.idx(origin)] === 1;
+    }
+
+    /** Has this color a cube some rotation could reach? The deadlock check asks this every frame,
+     *  so it reads the flood directly rather than allocating a V3 per cube via cellsOfColor. */
+    anyReachableEver(color: number): boolean {
+        const set = this.byColor.get(color);
+        if (!set || set.size === 0) return false;
+        this.ensureEver();
+        for (const i of set) if (this.everReach[i] === 1) return true;
+        return false;
     }
 
     /**

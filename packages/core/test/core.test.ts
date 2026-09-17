@@ -309,3 +309,82 @@ test("every shot reports a flyable path: axis-aligned, clear of cubes, onto the 
 
     assert.ok(checked > 50, `expected plenty of shots to check, got ${checked}`);
 });
+
+/** 3x3x3 solid shell of color 1 around a single buried color-2 cube at the centre. */
+function buriedCore(lanes: { color: number; ammo: number }[][]): LevelDef {
+    const cells: (number | null)[] = new Array(27).fill(1);
+    cells[1 + 1 * 3 + 1 * 9] = 2;
+    return { size: { nx: 3, ny: 3, nz: 3 }, cells, lanes };
+}
+
+test("a stuck slot alone is not a loss while another hive can still be loaded", () => {
+    const core = new GameCore(
+        buriedCore([[{ color: 2, ammo: 1 }], [{ color: 1, ammo: 26 }]]),
+        1,
+    );
+
+    core.activateColumn(0); // the buried color: nothing it can shoot yet
+    assert.equal(core.update(0.016).state.status, "playing");
+
+    core.activateColumn(1); // peels the shell, which frees the core
+    let state = core.getState();
+    for (let i = 0; i < 1000 && state.status === "playing"; i++) {
+        state = core.update(0.35).state;
+    }
+    assert.equal(state.status, "won");
+});
+
+test("a fresh level is not lost before anything is loaded", () => {
+    const core = new GameCore(buriedCore([[{ color: 1, ammo: 26 }]]), 1);
+    for (let i = 0; i < 10; i++) {
+        assert.equal(core.update(0.35).state.status, "playing");
+    }
+});
+
+test("running out of hives with cubes left is a loss", () => {
+    const core = new GameCore(smallSolidCube([[{ color: 1, ammo: 1 }]]), 1);
+    let lost = 0;
+    core.on("gameLost", () => lost++);
+
+    core.activateColumn(0);
+    let state = core.getState();
+    for (let i = 0; i < 100 && state.status === "playing"; i++) {
+        state = core.update(0.35).state;
+    }
+
+    assert.equal(state.status, "lost");
+    assert.equal(lost, 1); // and only once: the status gate stops it re-emitting
+});
+
+test("a permanently buried color is a loss once nothing else can be loaded", () => {
+    const core = new GameCore(buriedCore([[{ color: 2, ammo: 1 }]]), 1);
+
+    core.activateColumn(0); // only hive in the level, and its color is unreachable
+    let state = core.getState();
+    for (let i = 0; i < 100 && state.status === "playing"; i++) {
+        state = core.update(0.35).state;
+    }
+    assert.equal(state.status, "lost");
+});
+
+test("a hive with more ammo than its color has cubes frees its slot", () => {
+    // Two color-1 cubes, four color-1 ammo: the last two shots have nothing to hit.
+    const level: LevelDef = {
+        size: { nx: 2, ny: 2, nz: 2 },
+        cells: [2, 2, 2, 2, 1, 1, 2, 2], // the two color-1 cubes sit on the camera-facing face
+        lanes: [[{ color: 1, ammo: 4 }], [{ color: 2, ammo: 6 }]],
+    };
+    const core = new GameCore(level, 1);
+    let shots = 0;
+    core.on("cubeShot", () => shots++);
+
+    core.activateColumn(0);
+    let state = core.getState();
+    for (let i = 0; i < 20 && state.slots.some((s) => s !== null); i++) {
+        state = core.update(0.35).state;
+    }
+
+    assert.equal(shots, 2); // fired what there was to fire
+    assert.deepEqual(state.slots, [null, null, null, null, null]); // and got out of the way
+    assert.equal(state.status, "playing"); // column 1 still has a hive to load
+});
