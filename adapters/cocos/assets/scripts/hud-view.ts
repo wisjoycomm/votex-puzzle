@@ -21,6 +21,7 @@ import { HiveView } from "./hive-view";
 import { playSfx } from "./audio-manager";
 import { LaneView } from "./lane-view";
 import { SocketView } from "./socket-view";
+import { TutorialHand } from "./tutorial-hand";
 import { TopHiveView } from "./top-hive-view";
 
 const { ccclass, property } = _decorator;
@@ -64,6 +65,10 @@ export class HudView extends Component {
     /** The hive at the top of the board. Bees deliver the cubes they pull out into it. */
     @property(TopHiveView)
     topHive: TopHiveView = null!;
+
+    /** Optional first-run hint. Points at the middle lane until the player fires. */
+    @property(TutorialHand)
+    tutorialHand: TutorialHand = null!;
 
     @property(EndView)
     winPanel: EndView = null!;
@@ -150,6 +155,9 @@ export class HudView extends Component {
                 this.lanes.forEach((lane, i) =>
                     lane.bind(this.hivePrefab, () => this.activate(i)),
                 );
+                this.tutorialHand?.pointAt(
+                    this.lanes[Math.floor(laneCount / 2)]?.node ?? null,
+                );
             }
         }
         if (this.slots.length !== slotCount) {
@@ -179,6 +187,7 @@ export class HudView extends Component {
         const from = this.lanes[laneIndex]?.frontNode();
         const slot = this.onActivate?.(laneIndex);
         if (slot === null || slot === undefined || !hive || !from) return;
+        this.tutorialHand?.hide();
         this.flyHive(from, slot, hive.color, hive.ammo);
     }
 
